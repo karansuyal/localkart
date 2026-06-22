@@ -183,3 +183,17 @@ class ReviewOut(BaseModel):
     sentiment_score: Optional[float]
     created_at: datetime
     class Config: from_attributes = True
+
+# ─── Dark Store ───────────────────────────────────────────────────────────────
+class DarkStoreConvert(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class NearestStoreOut(BaseModel):
+    id: int
+    name: str
+    latitude: float
+    longitude: float
+    address: str
+    distance_km: Optional[float] = None
+    class Config: from_attributes = True
