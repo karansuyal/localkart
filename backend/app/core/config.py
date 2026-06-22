@@ -6,8 +6,12 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     SECRET_KEY: str = "localkart-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 525600   
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 3650      
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_PHONE_NUMBER: str = ""
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""   
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
