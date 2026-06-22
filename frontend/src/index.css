@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn-primary {
+    @apply bg-ink-900 hover:bg-ink-800 text-white font-semibold py-2 px-4 rounded-xl transition-colors duration-150;
+  }
+  .btn-accent {
+    @apply bg-primary-400 hover:bg-primary-500 text-ink-900 font-bold py-2 px-4 rounded-xl transition-colors duration-150;
+  }
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-ink-800 font-medium py-2 px-4 rounded-xl border border-gray-200 transition-colors duration-150;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100 p-4;
+  }
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent;
+  }
+  .badge-green  { @apply bg-fresh-50 text-fresh-600 text-xs px-2 py-1 rounded-full font-semibold; }
+  .badge-red    { @apply bg-urgent-50 text-urgent-600 text-xs px-2 py-1 rounded-full font-semibold; }
+  .badge-yellow { @apply bg-primary-100 text-primary-800 text-xs px-2 py-1 rounded-full font-semibold; }
+  .eta-badge {
+    @apply inline-flex items-center gap-1 bg-ink-900 text-primary-400 text-xs font-bold px-2 py-1 rounded-lg font-display;
+  }
+  .font-display { font-family: 'Lexend', 'Inter', system-ui, sans-serif; }
+}

@@ -1,0 +1,34 @@
+# ─── Secrets — NEVER commit these ──────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+ai-service/.env
+
+# ─── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+*.db
+*.sqlite3
+
+# ─── Node / Frontend ────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.vite/
+
+# ─── Editor / OS ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ─── Logs ───────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
