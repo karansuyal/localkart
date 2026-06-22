@@ -26,8 +26,8 @@ class User(Base):
     __tablename__ = "users"
     id            = Column(Integer, primary_key=True, index=True)
     name          = Column(String(100), nullable=False)
-    email         = Column(String(150), unique=True, index=True, nullable=False)
-    phone         = Column(String(15), unique=True, nullable=True)
+    phone         = Column(String(15), unique=True, index=True, nullable=False)
+    email         = Column(String(150), unique=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     role          = Column(Enum(UserRole), default=UserRole.customer, nullable=False)
     is_active     = Column(Boolean, default=True)

@@ -1,32 +1,18 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
-from app.models.user import UserRole, OrderStatus
+from app.models.user import UserRole, OrderStatus, StoreType
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
-class FirebaseAuthRequest(BaseModel):
-    firebase_token: str
-    name: Optional[str] = "User"
-    role: Optional[str] = "customer"
-
-class SendOTPRequest(BaseModel):
-    phone: str          # +91XXXXXXXXXX format
-    name: str = "User"  # Register ke waqt naam
-    role: str = "customer"
-
-class VerifyOTPRequest(BaseModel):
-    phone: str
-    otp: str            # 6 digit
-
 class UserRegister(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr
-    phone: Optional[str] = None
+    phone: str = Field(..., min_length=10, max_length=15)
+    email: Optional[EmailStr] = None
     password: str = Field(..., min_length=6)
     role: UserRole = UserRole.customer
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    phone: str = Field(..., min_length=10, max_length=15)
     password: str
 
 class TokenResponse(BaseModel):
@@ -67,6 +53,9 @@ class ShopCreate(BaseModel):
     longitude: float
     address: str
     phone: Optional[str] = None
+    store_type: StoreType = StoreType.shop
+    service_radius_km: float = Field(5.0, gt=0, le=25)
+    avg_prep_minutes: int = Field(15, ge=1, le=120)
 
 class ShopOut(BaseModel):
     id: int
@@ -83,6 +72,9 @@ class ShopOut(BaseModel):
     is_verified: bool
     rating: float
     total_reviews: int
+    store_type: StoreType
+    service_radius_km: float
+    avg_prep_minutes: int
     created_at: datetime
     class Config: from_attributes = True
 
@@ -95,6 +87,20 @@ class ShopUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     address: Optional[str] = None
+    store_type: Optional[StoreType] = None
+    service_radius_km: Optional[float] = Field(None, gt=0, le=25)
+    avg_prep_minutes: Optional[int] = Field(None, ge=1, le=120)
+
+# Lightweight payload for the "convert my shop to dark store" action
+class DarkStoreConvert(BaseModel):
+    service_radius_km: float = Field(3.0, gt=0, le=15)
+    avg_prep_minutes: int = Field(10, ge=1, le=30)
+
+# Result of the nearest-dark-store lookup, includes computed ETA
+class NearestStoreOut(BaseModel):
+    shop: ShopOut
+    distance_km: float
+    eta_minutes: int
 
 # ─── Product ─────────────────────────────────────────────────────────────────
 class ProductCreate(BaseModel):
@@ -162,6 +168,7 @@ class OrderOut(BaseModel):
     delivery_address: str
     notes: Optional[str]
     payment_mode: str
+    eta_minutes: Optional[int]
     items: List[OrderItemOut]
     created_at: datetime
     class Config: from_attributes = True
@@ -182,18 +189,4 @@ class ReviewOut(BaseModel):
     sentiment: Optional[str]
     sentiment_score: Optional[float]
     created_at: datetime
-    class Config: from_attributes = True
-
-# ─── Dark Store ───────────────────────────────────────────────────────────────
-class DarkStoreConvert(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-
-class NearestStoreOut(BaseModel):
-    id: int
-    name: str
-    latitude: float
-    longitude: float
-    address: str
-    distance_km: Optional[float] = None
     class Config: from_attributes = True
