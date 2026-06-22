@@ -34,11 +34,11 @@ api.interceptors.response.use(
 )
 
 // ==================== AUTH ====================
+// data shape: { name, phone, email?, password, role } for register,
+// { phone, password } for login -- matches Login.jsx / Register.jsx forms.
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
-  // Firebase OTP login — naya add kiya
-  firebaseLogin: (data) => api.post('/auth/firebase-login', data),
 }
 
 // ==================== USERS ====================
