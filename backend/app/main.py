@@ -23,6 +23,12 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    # Vercel gives every deployment (and every preview branch) its own
+    # unique subdomain like localkart-<hash>-<team>.vercel.app, which
+    # changes on every deploy. Rather than chasing that with an env var
+    # update each time, allow any subdomain of vercel.app via regex, in
+    # addition to the explicit origins above for local dev / custom domains.
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
