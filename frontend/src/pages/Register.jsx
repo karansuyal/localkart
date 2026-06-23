@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import { authAPI } from '../services/api'
 import { useAuthStore } from '../context/store'
+import { getErrorMessage } from '../utils/errorMessage'
 import { ShoppingBag } from 'lucide-react'
 
 const ROLES = [
@@ -22,7 +23,14 @@ export default function Register() {
   const onSubmit = async (data) => {
     setLoading(true)
     try {
-      const res = await authAPI.register(data)
+      // Same normalization as Login: always +91 plus exactly 10 digits.
+      const cleanPhone = `+91${data.phone.replace(/\D/g, '').slice(-10)}`
+      // Pydantic's Optional[EmailStr] rejects an empty string ("" is not a
+      // valid email) -- it only accepts a real email or the field being
+      // absent entirely. So an unfilled email box must become undefined,
+      // not "".
+      const payload = { ...data, phone: cleanPhone, email: data.email?.trim() || undefined }
+      const res = await authAPI.register(payload)
       const { access_token, user_id, role } = res.data
       login({ id: user_id, role }, access_token)
       toast.success('Registration successful! Welcome to LocalKart 🎉')
@@ -30,7 +38,7 @@ export default function Register() {
       else if (role === 'delivery') navigate('/delivery')
       else navigate('/home')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Registration failed')
+      toast.error(getErrorMessage(err, 'Registration failed'))
     } finally {
       setLoading(false)
     }
@@ -54,12 +62,25 @@ export default function Register() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-            <input
-              type="tel"
-              {...register('phone', { required: 'Phone number required', minLength: { value: 10, message: 'Enter a valid phone number' } })}
-              className="input-field"
-              placeholder="9876543210"
-            />
+            <div className="flex">
+              <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-200 bg-gray-50 text-gray-600 font-medium text-sm select-none">
+                +91
+              </span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                {...register('phone', {
+                  required: 'Phone number required',
+                  pattern: { value: /^\d{10}$/, message: 'Enter exactly 10 digits, no spaces or symbols' }
+                })}
+                onChange={(e) => {
+                  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10)
+                }}
+                className="input-field rounded-l-none flex-1"
+                placeholder="9876543210"
+              />
+            </div>
             {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
           </div>
           <div>
