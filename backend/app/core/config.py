@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     GOOGLE_MAPS_API_KEY: str = ""
     AI_SERVICE_URL: str = "http://localhost:8001"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    # Unsplash
+    UNSPLASH_ACCESS_KEY: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
+    UNSPLASH_SECRET_KEY: str = os.getenv("UNSPLASH_SECRET_KEY", "")
 
     @property
     def cors_origins_list(self) -> List[str]:
