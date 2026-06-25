@@ -9,7 +9,7 @@ router = APIRouter()
 async def search_product_images(
     query: str = Query(..., description="Product search term"),
     per_page: int = Query(10, ge=1, le=30),
-    current_user = Depends(get_current_user)  # Optional: Remove if public API
+    current_user = Depends(get_current_user)  
 ):
     """
     Search product images from Unsplash
