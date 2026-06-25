@@ -9,7 +9,7 @@ router = APIRouter()
 async def search_product_images(
     query: str = Query(..., description="Product search term"),
     per_page: int = Query(10, ge=1, le=30),
-    current_user = Depends(get_current_user)  
+    current_user: User = Depends(get_current_user)  
 ):
     """
     Search product images from Unsplash
@@ -29,7 +29,10 @@ async def search_product_images(
     }
 
 @router.get("/photo/{photo_id}")
-async def get_photo_details(photo_id: str):
+async def get_photo_details(
+    photo_id: str,
+    current_user: User = Depends(get_current_user)  
+):
     """Get specific photo details"""
     photo = await unsplash_service.get_photo_by_id(photo_id)
     if not photo:
@@ -37,7 +40,10 @@ async def get_photo_details(photo_id: str):
     return photo
 
 @router.post("/download/track")
-async def track_download(data: dict):
+async def track_download(
+    data: dict,
+    current_user: User = Depends(get_current_user) 
+):
     """Track image download (Required by Unsplash)"""
     download_url = data.get("download_url")
     if not download_url:
