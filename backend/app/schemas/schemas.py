@@ -26,7 +26,7 @@ class TokenResponse(BaseModel):
 class UserOut(BaseModel):
     id: int
     name: str
-    email: str
+    email: Optional[str] = None
     phone: Optional[str]
     role: UserRole
     is_active: bool
