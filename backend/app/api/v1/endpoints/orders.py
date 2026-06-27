@@ -5,8 +5,9 @@ from sqlalchemy.orm import selectinload
 from typing import List
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.user import User, Order, OrderItem, Product, Shop, Delivery, UserRole, OrderStatus, StoreType
+from app.models.user import User, Order, OrderItem, Product, Shop, Delivery, UserRole, OrderStatus
 from app.schemas.schemas import OrderCreate, OrderOut
+from app.services.notifications import notify_shopkeeper, notify_delivery_partners
 import math
 
 router = APIRouter()
@@ -17,19 +18,6 @@ def haversine(lat1, lng1, lat2, lng2):
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-
-async def _enrich_order_with_otp(order: Order, db: AsyncSession) -> dict:
-    """Order dict mein OTP bhi add karo delivery se"""
-    d = {c.name: getattr(order, c.name) for c in order.__table__.columns}
-    d['items'] = [
-        {c.name: getattr(item, c.name) for c in item.__table__.columns}
-        for item in order.items
-    ]
-    # Delivery se OTP lo
-    result = await db.execute(select(Delivery).where(Delivery.order_id == order.id))
-    delivery = result.scalar_one_or_none()
-    d['otp'] = delivery.otp if delivery and delivery.otp else None
-    return d
 
 @router.post("/", response_model=OrderOut, status_code=201)
 async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -70,7 +58,8 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
     await db.flush()
 
     for product, qty in items_to_create:
-        oi = OrderItem(order_id=order.id, product_id=product.id, quantity=qty, unit_price=product.price, total_price=product.price * qty)
+        oi = OrderItem(order_id=order.id, product_id=product.id, quantity=qty,
+                       unit_price=product.price, total_price=product.price * qty)
         db.add(oi)
         product.quantity -= qty
 
@@ -78,12 +67,30 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
     db.add(delivery)
     await db.commit()
 
-    # Notify shopkeeper via WebSocket
+    # Shopkeeper ko FCM notification
+    owner_res = await db.execute(select(User).where(User.id == shop.owner_id))
+    owner = owner_res.scalar_one_or_none()
+    if owner and owner.fcm_token:
+        await notify_shopkeeper(
+            owner.fcm_token,
+            title="🛍️ Naya Order Aaya!",
+            body=f"₹{total} ka order {shop.name} pe — jaldi confirm karo!",
+            order_id=order.id
+        )
+
+    # Delivery partners ko FCM notification (topic)
+    await notify_delivery_partners(
+        title="📦 Naya Delivery Order!",
+        body=f"₹{total} ka order available — {data.delivery_address[:40]}...",
+        order_id=order.id
+    )
+
+    # WebSocket se shopkeeper ko bhi notify
     try:
         from app.api.v1.endpoints.websocket import manager
         await manager.broadcast(f"shop_{data.shop_id}", {
             "type": "new_order", "order_id": order.id,
-            "total_amount": total, "message": f"Naya order aya! ₹{total}"
+            "total_amount": total, "message": f"Naya order! ₹{total}"
         })
     except Exception:
         pass
@@ -102,16 +109,11 @@ async def my_orders(db: AsyncSession = Depends(get_db), current_user: User = Dep
         .order_by(Order.created_at.desc())
     )
     orders = result.scalars().all()
-
-    # OTP include karo har order ke liye
-    enriched = []
     for order in orders:
         d_res = await db.execute(select(Delivery).where(Delivery.order_id == order.id))
         delivery = d_res.scalar_one_or_none()
-        # Manually set otp on the order object
         order.__dict__['otp'] = delivery.otp if delivery and delivery.otp else None
-        enriched.append(order)
-    return enriched
+    return orders
 
 @router.get("/shop/{shop_id}", response_model=List[OrderOut])
 async def shop_orders(shop_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -142,7 +144,9 @@ async def update_order_status(order_id: int, status: OrderStatus, db: AsyncSessi
     await db.commit()
     try:
         from app.api.v1.endpoints.websocket import manager
-        await manager.broadcast(f"order_{order_id}", {"type": "order_update", "order_id": order_id, "status": status.value})
+        await manager.broadcast(f"order_{order_id}", {
+            "type": "order_update", "order_id": order_id, "status": status.value
+        })
     except Exception:
         pass
     return {"message": "Status updated", "status": status}

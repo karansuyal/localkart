@@ -1,5 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './context/store'
+import { useEffect } from 'react'
+import toast from 'react-hot-toast'
+import { Toaster } from 'react-hot-toast'
 
 // Pages
 import Login from './pages/Login'
@@ -26,6 +29,31 @@ const ProtectedRoute = ({ children, roles }) => {
 export default function App() {
   const { role, isAuthenticated } = useAuthStore()
 
+  // FCM setup — login ke baad
+  useEffect(() => {
+    if (!isAuthenticated) return
+    import('./services/fcm').then(({ requestNotificationPermission, onForegroundMessage }) => {
+      requestNotificationPermission()
+      // Foreground mein aane wali notifications ko toast se dikhao
+      onForegroundMessage((payload) => {
+        const title = payload.notification?.title || 'LocalKart'
+        const body = payload.notification?.body || ''
+        toast(body, {
+          icon: title.includes('Order') ? '🛍️' : title.includes('Delivery') ? '🛵' : '🔔',
+          duration: 5000,
+        })
+      })
+    })
+  }, [isAuthenticated])
+
+  // Delivery partners ko topic pe subscribe karo
+  useEffect(() => {
+    if (role === 'delivery') {
+      // Delivery partners automatically "delivery_partners" topic pe hote hain
+      // FCM token save hone ke baad backend pe subscribe hoga
+    }
+  }, [role])
+
   const getHome = () => {
     if (!isAuthenticated) return '/login'
     if (role === 'shopkeeper') return '/shopkeeper'
@@ -36,6 +64,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Toaster position="top-center" />
       <Routes>
         <Route path="/" element={<Navigate to={getHome()} replace />} />
         <Route path="/login" element={<Login />} />

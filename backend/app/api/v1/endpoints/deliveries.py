@@ -120,6 +120,18 @@ async def accept_delivery(
 
     await db.commit()
 
+    # Customer ko FCM push notification
+    customer_res = await db.execute(select(User).where(User.id == order.user_id))
+    customer = customer_res.scalar_one_or_none()
+    if customer and customer.fcm_token:
+        from app.services.notifications import notify_customer
+        await notify_customer(
+            customer.fcm_token,
+            title="🛵 Delivery Partner On The Way!",
+            body=f"Aapka order accept ho gaya! {current_user.name} deliver karega — ETA: {order.eta_minutes or '?'} min",
+            order_id=delivery.order_id
+        )
+
     # WebSocket se customer ko notify karo
     try:
         from app.api.v1.endpoints.websocket import manager
@@ -164,7 +176,17 @@ async def mark_pickup(delivery_id: int, db: AsyncSession = Depends(get_db), curr
 
     await db.commit()
 
-    # Customer ko notify karo
+    # Customer ko FCM notification
+    cust_res = await db.execute(select(User).where(User.id == order.user_id))
+    cust = cust_res.scalar_one_or_none()
+    if cust and cust.fcm_token:
+        from app.services.notifications import notify_customer
+        await notify_customer(
+            cust.fcm_token,
+            title="🚀 Order Pick Up Ho Gaya!",
+            body="Delivery partner aapke paas aa raha hai — jaldi pahunch jayega!",
+            order_id=delivery.order_id
+        )
     try:
         from app.api.v1.endpoints.websocket import manager
         await manager.broadcast(f"order_{delivery.order_id}", {

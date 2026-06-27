@@ -43,6 +43,7 @@ class UserUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     address: Optional[str] = None
+    fcm_token: Optional[str] = None  # Firebase push token
 
 # ─── Shop ────────────────────────────────────────────────────────────────────
 class ShopCreate(BaseModel):
