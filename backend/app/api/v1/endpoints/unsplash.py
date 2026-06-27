@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services.unsplash_service import unsplash_service
-from app.api.v1.endpoints.auth import get_current_user
+from app.core.security import get_current_user
 from app.models.user import User
 
 router = APIRouter()

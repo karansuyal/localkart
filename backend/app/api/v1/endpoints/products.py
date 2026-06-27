@@ -90,6 +90,13 @@ async def upload_product_image(
         raise HTTPException(status_code=404, detail="Product not found")
     url = await upload_image(file, folder="localkart/products")
     product.image_url = url
+    # A manual upload always replaces whatever was there before -- if the
+    # product previously used an Unsplash photo, that attribution no longer
+    # applies to the new image, so clear it.
+    product.image_source = "upload"
+    product.unsplash_photo_id = None
+    product.unsplash_photographer = None
+    product.unsplash_photographer_url = None
     await db.commit()
     return {"image_url": url}
 

@@ -86,6 +86,14 @@ class Product(Base):
     quantity      = Column(Integer, default=0)
     unit          = Column(String(50), default="piece")
     image_url     = Column(String, nullable=True)
+    # Unsplash attribution -- required by Unsplash API Guidelines whenever
+    # an image sourced from Unsplash is displayed. Null for shopkeeper-
+    # uploaded photos (Cloudinary), populated only when the image came
+    # from the /unsplash/search picker.
+    image_source       = Column(String(20), default="upload")  # 'upload' | 'unsplash'
+    unsplash_photo_id  = Column(String(50), nullable=True)
+    unsplash_photographer      = Column(String(150), nullable=True)
+    unsplash_photographer_url  = Column(String, nullable=True)
     is_available  = Column(Boolean, default=True)
     tags          = Column(JSON, default=list)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())

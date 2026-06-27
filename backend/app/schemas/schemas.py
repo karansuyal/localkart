@@ -112,6 +112,13 @@ class ProductCreate(BaseModel):
     quantity: int = Field(..., ge=0)
     unit: str = "piece"
     tags: List[str] = []
+    # Optional: set these together when the shopkeeper picks an image from
+    # the Unsplash search picker instead of uploading their own photo.
+    image_url: Optional[str] = None
+    image_source: Optional[str] = "upload"
+    unsplash_photo_id: Optional[str] = None
+    unsplash_photographer: Optional[str] = None
+    unsplash_photographer_url: Optional[str] = None
 
 class ProductOut(BaseModel):
     id: int
@@ -124,6 +131,9 @@ class ProductOut(BaseModel):
     quantity: int
     unit: str
     image_url: Optional[str]
+    image_source: Optional[str]
+    unsplash_photographer: Optional[str]
+    unsplash_photographer_url: Optional[str]
     is_available: bool
     tags: List[str]
     created_at: datetime
@@ -135,6 +145,11 @@ class ProductUpdate(BaseModel):
     quantity: Optional[int] = None
     is_available: Optional[bool] = None
     description: Optional[str] = None
+    image_url: Optional[str] = None
+    image_source: Optional[str] = None
+    unsplash_photo_id: Optional[str] = None
+    unsplash_photographer: Optional[str] = None
+    unsplash_photographer_url: Optional[str] = None
 
 # ─── Order ───────────────────────────────────────────────────────────────────
 class OrderItemCreate(BaseModel):
