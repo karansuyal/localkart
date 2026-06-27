@@ -184,6 +184,7 @@ class OrderOut(BaseModel):
     notes: Optional[str]
     payment_mode: str
     eta_minutes: Optional[int]
+    otp: Optional[str] = None  # Delivery OTP for customer
     items: List[OrderItemOut]
     created_at: datetime
     class Config: from_attributes = True

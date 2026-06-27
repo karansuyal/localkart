@@ -99,6 +99,7 @@ export const deliveryAPI = {
   deliver: (id, otp) =>
     api.post(`/deliveries/${id}/deliver`, null, { params: { otp } }),
   earnings: () => api.get('/deliveries/my/earnings'),
+  myActive: () => api.get('/deliveries/my/active'),
 }
 
 // ==================== ADMIN ====================

@@ -11,13 +11,25 @@ import math
 
 router = APIRouter()
 
-
 def haversine(lat1, lng1, lat2, lng2):
     R = 6371
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+async def _enrich_order_with_otp(order: Order, db: AsyncSession) -> dict:
+    """Order dict mein OTP bhi add karo delivery se"""
+    d = {c.name: getattr(order, c.name) for c in order.__table__.columns}
+    d['items'] = [
+        {c.name: getattr(item, c.name) for c in item.__table__.columns}
+        for item in order.items
+    ]
+    # Delivery se OTP lo
+    result = await db.execute(select(Delivery).where(Delivery.order_id == order.id))
+    delivery = result.scalar_one_or_none()
+    d['otp'] = delivery.otp if delivery and delivery.otp else None
+    return d
 
 @router.post("/", response_model=OrderOut, status_code=201)
 async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -40,9 +52,6 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
         total += product.price * item.quantity
         items_to_create.append((product, item.quantity))
 
-    # ETA only makes sense once we know where it's going. If delivery_lat/lng
-    # weren't supplied, eta_minutes stays None -- the frontend already treats
-    # that as "no ETA available" everywhere it reads this field.
     eta_minutes = None
     if data.delivery_lat is not None and data.delivery_lng is not None:
         distance_km = haversine(data.delivery_lat, data.delivery_lng, shop.latitude, shop.longitude)
@@ -50,15 +59,11 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
         eta_minutes = shop.avg_prep_minutes + travel_minutes
 
     order = Order(
-        user_id=current_user.id,
-        shop_id=data.shop_id,
-        total_amount=total,
-        delivery_fee=20.0,
+        user_id=current_user.id, shop_id=data.shop_id,
+        total_amount=total, delivery_fee=20.0,
         delivery_address=data.delivery_address,
-        delivery_lat=data.delivery_lat,
-        delivery_lng=data.delivery_lng,
-        notes=data.notes,
-        payment_mode=data.payment_mode,
+        delivery_lat=data.delivery_lat, delivery_lng=data.delivery_lng,
+        notes=data.notes, payment_mode=data.payment_mode,
         eta_minutes=eta_minutes
     )
     db.add(order)
@@ -71,10 +76,18 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
 
     delivery = Delivery(order_id=order.id)
     db.add(delivery)
-
     await db.commit()
 
-    # Eagerly load items to avoid MissingGreenlet error
+    # Notify shopkeeper via WebSocket
+    try:
+        from app.api.v1.endpoints.websocket import manager
+        await manager.broadcast(f"shop_{data.shop_id}", {
+            "type": "new_order", "order_id": order.id,
+            "total_amount": total, "message": f"Naya order aya! ₹{total}"
+        })
+    except Exception:
+        pass
+
     result = await db.execute(
         select(Order).options(selectinload(Order.items)).where(Order.id == order.id)
     )
@@ -88,7 +101,17 @@ async def my_orders(db: AsyncSession = Depends(get_db), current_user: User = Dep
         .where(Order.user_id == current_user.id)
         .order_by(Order.created_at.desc())
     )
-    return result.scalars().all()
+    orders = result.scalars().all()
+
+    # OTP include karo har order ke liye
+    enriched = []
+    for order in orders:
+        d_res = await db.execute(select(Delivery).where(Delivery.order_id == order.id))
+        delivery = d_res.scalar_one_or_none()
+        # Manually set otp on the order object
+        order.__dict__['otp'] = delivery.otp if delivery and delivery.otp else None
+        enriched.append(order)
+    return enriched
 
 @router.get("/shop/{shop_id}", response_model=List[OrderOut])
 async def shop_orders(shop_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -117,4 +140,9 @@ async def update_order_status(order_id: int, status: OrderStatus, db: AsyncSessi
         raise HTTPException(status_code=404, detail="Order not found")
     order.status = status
     await db.commit()
+    try:
+        from app.api.v1.endpoints.websocket import manager
+        await manager.broadcast(f"order_{order_id}", {"type": "order_update", "order_id": order_id, "status": status.value})
+    except Exception:
+        pass
     return {"message": "Status updated", "status": status}
