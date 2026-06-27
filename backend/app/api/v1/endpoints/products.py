@@ -11,17 +11,14 @@ router = APIRouter()
 
 @router.post("/", response_model=ProductOut, status_code=201)
 async def create_product(data: ProductCreate, shop_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    print("DEBUG raw data received:", data.model_dump())
     result = await db.execute(select(Shop).where(Shop.id == shop_id))
     shop = result.scalar_one_or_none()
     if not shop or shop.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
     product = Product(**data.model_dump(), shop_id=shop_id)
-    print("DEBUG product object before commit:", product.image_url, product.image_source, product.unsplash_photographer)
     db.add(product)
     await db.commit()
     await db.refresh(product)
-    print("DEBUG product object after commit:", product.image_url, product.image_source, product.unsplash_photographer)
     return product
 
 @router.get("/shop/{shop_id}", response_model=List[ProductOut])

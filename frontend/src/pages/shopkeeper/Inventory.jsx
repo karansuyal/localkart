@@ -145,8 +145,6 @@ export default function InventoryPage() {
       payload.unsplash_photographer_url = pendingUnsplash.photographer_url
     }
 
-    console.log('DEBUG pendingUnsplash:', pendingUnsplash)
-    console.log('DEBUG payload being sent:', payload)
     addMutation.mutate(payload)
   }
 
