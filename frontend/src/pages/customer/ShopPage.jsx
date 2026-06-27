@@ -105,6 +105,20 @@ export default function ShopPage() {
                       <span className="text-xs text-gray-400 line-through">₹{product.mrp}</span>
                     )}
                   </div>
+                  {/* Unsplash API Guidelines require photographer + Unsplash
+                      attribution wherever the photo is displayed. */}
+                  {product.image_source === 'unsplash' && product.unsplash_photographer && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      📸{' '}
+                      <a href={product.unsplash_photographer_url ? `${product.unsplash_photographer_url}?utm_source=localkart&utm_medium=referral` : '#'} target="_blank" rel="noopener noreferrer" className="underline">
+                        {product.unsplash_photographer}
+                      </a>{' '}
+                      on{' '}
+                      <a href="https://unsplash.com/?utm_source=localkart&utm_medium=referral" target="_blank" rel="noopener noreferrer" className="underline">
+                        Unsplash
+                      </a>
+                    </p>
+                  )}
                 </div>
                 <div>
                   {qty === 0 ? (
