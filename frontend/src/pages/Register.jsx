@@ -25,12 +25,7 @@ export default function Register() {
     try {
       // Same normalization as Login: always +91 plus exactly 10 digits.
       const cleanPhone = `+91${data.phone.replace(/\D/g, '').slice(-10)}`
-      // Pydantic's Optional[EmailStr] rejects an empty string ("" is not a
-      // valid email) -- it only accepts a real email or the field being
-      // absent entirely. So an unfilled email box must become undefined,
-      // not "".
-      const payload = { ...data, phone: cleanPhone, email: data.email?.trim() || undefined }
-      const res = await authAPI.register(payload)
+      const res = await authAPI.register({ ...data, phone: cleanPhone })
       const { access_token, user_id, role } = res.data
       login({ id: user_id, role }, access_token)
       toast.success('Registration successful! Welcome to LocalKart 🎉')
@@ -82,15 +77,6 @@ export default function Register() {
               />
             </div>
             {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email (optional)</label>
-            <input
-              {...register('email', { pattern: { value: /\S+@\S+\.\S+/, message: 'Invalid email' } })}
-              className="input-field"
-              placeholder="email@example.com"
-            />
-            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
