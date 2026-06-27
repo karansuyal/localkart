@@ -69,3 +69,44 @@ async def notify_order_update(order_id: int, shop_id: int, status: str):
     payload = {"type": "order_update", "order_id": order_id, "status": status}
     await manager.broadcast(f"order_{order_id}", payload)
     await manager.broadcast(f"shop_{shop_id}", {**payload, "type": "new_order_update"})
+    
+@router.websocket("/ws/delivery/available")
+async def delivery_available_ws(websocket: WebSocket, token: str = None):
+    """Delivery partner connects to get new delivery notifications."""
+    # Token check
+    if not token:
+        # Query param se lo
+        token = websocket.query_params.get("token")
+    
+    if not token:
+        await websocket.close(code=4001)
+        return
+    
+    try:
+        from app.core.security import decode_token
+        payload = decode_token(token)
+        role = payload.get("role")
+        if role != "delivery":
+            await websocket.close(code=4003)
+            return
+    except Exception:
+        await websocket.close(code=4001)
+        return
+
+    room = "delivery_available"
+    await manager.connect(websocket, room)
+    try:
+        await websocket.send_text(json.dumps({"type": "connected"}))
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            if msg.get("type") == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, room)
+
+
+async def notify_new_delivery(order_id: int):
+    """Saare delivery partners ko new delivery notification"""
+    payload = {"type": "new_delivery", "order_id": order_id}
+    await manager.broadcast("delivery_available", payload)
