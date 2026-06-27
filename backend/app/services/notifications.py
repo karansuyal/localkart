@@ -35,7 +35,8 @@ def _send_to_token(token: str, title: str, body: str, data: dict = None):
                 title=title, body=body, icon="/icon-192.png",
                 badge="/favicon-32.png",
             ),
-            fcm_options=messaging.WebpushFCMOptions(link="/")
+            fcm_options=messaging.WebpushFCMOptions(link="https://localkart-five.vercel.app")
+
         )
     )
     try:
