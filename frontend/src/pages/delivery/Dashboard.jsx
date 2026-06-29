@@ -15,7 +15,7 @@ const STATUS_LABELS = {
 }
 
 export default function DeliveryDashboard() {
-  const { logout, user } = useAuthStore()
+  const { logout, user, token } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [otpInputs, setOtpInputs] = useState({})
@@ -23,21 +23,37 @@ export default function DeliveryDashboard() {
   // WebSocket for real-time new order notifications
   const wsRef = useRef(null)
   useEffect(() => {
+    if (!token) return
     const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-i5wm.onrender.com'
-    const ws = new WebSocket(`${wsBase}/ws/delivery/available`)
-    wsRef.current = ws
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data)
-      if (data.type === 'new_order') {
-        qc.invalidateQueries(['available-deliveries'])
-        toast('Naya order available hai! 🛵', { icon: '📦' })
+    let ws
+    let reconnectTimer
+
+    const connect = () => {
+      // The backend's /ws/delivery/available route requires a ?token= query
+      // param to verify the connecting user is actually a delivery partner
+      // -- without it, the connection is rejected outright (this was the
+      // "403 Forbidden" / connection-rejected behavior seen in the logs).
+      ws = new WebSocket(`${wsBase}/ws/delivery/available?token=${token}`)
+      wsRef.current = ws
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data)
+        // Backend broadcasts type "new_delivery" for new orders becoming
+        // available (see websocket.py notify_new_delivery).
+        if (data.type === 'new_delivery') {
+          qc.invalidateQueries(['available-deliveries'])
+          toast('Naya order available hai! 🛵', { icon: '📦' })
+        }
       }
+      ws.onclose = () => { reconnectTimer = setTimeout(connect, 5000) }
+      ws.onerror = () => ws.close()
     }
+    connect()
+
     const ping = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
     }, 30000)
-    return () => { clearInterval(ping); ws.close() }
-  }, [])
+    return () => { clearInterval(ping); clearTimeout(reconnectTimer); ws.close() }
+  }, [token])
 
   const { data: available = [], isLoading: loadingAvailable } = useQuery({
     queryKey: ['available-deliveries'],

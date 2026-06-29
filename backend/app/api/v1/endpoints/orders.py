@@ -92,6 +92,13 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
             "type": "new_order", "order_id": order.id,
             "total_amount": total, "message": f"Naya order! ₹{total}"
         })
+        # Same event, broadcast to whichever delivery partners are actively
+        # connected -- this is what the delivery dashboard's live "available
+        # orders" list listens for. Without this call, that WebSocket room
+        # never receives anything even when the connection itself works.
+        await manager.broadcast("delivery_available", {
+            "type": "new_delivery", "order_id": order.id
+        })
     except Exception:
         pass
 

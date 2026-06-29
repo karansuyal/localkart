@@ -68,7 +68,10 @@ async def shop_orders_live(websocket: WebSocket, shop_id: int):
 async def notify_order_update(order_id: int, shop_id: int, status: str):
     payload = {"type": "order_update", "order_id": order_id, "status": status}
     await manager.broadcast(f"order_{order_id}", payload)
-    await manager.broadcast(f"shop_{shop_id}", {**payload, "type": "new_order_update"})
+    # Use the same "order_update" type the shop channel expects (see
+    # useShopNotifications.js) -- "new_order_update" was a leftover name
+    # that never matched anything on the frontend.
+    await manager.broadcast(f"shop_{shop_id}", payload)
     
 @router.websocket("/ws/delivery/available")
 async def delivery_available_ws(websocket: WebSocket, token: str = None):
@@ -107,6 +110,7 @@ async def delivery_available_ws(websocket: WebSocket, token: str = None):
 
 
 async def notify_new_delivery(order_id: int):
-    """Saare delivery partners ko new delivery notification"""
+    """Saare connected delivery partners ko new delivery notification.
+    Frontend (delivery/Dashboard.jsx) listens for type === 'new_delivery'."""
     payload = {"type": "new_delivery", "order_id": order_id}
     await manager.broadcast("delivery_available", payload)

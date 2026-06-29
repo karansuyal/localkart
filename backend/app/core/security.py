@@ -29,20 +29,6 @@ def create_refresh_token(data: dict) -> str:
     to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-def decode_token(token: str):
-    """
-    Decode JWT token and return payload.
-    """
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
-        )
-        return payload
-    except JWTError:
-        raise
-
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

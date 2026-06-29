@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { shopAPI, orderAPI } from '../../services/api'
+import { useShopNotifications } from '../../hooks/useShopNotifications'
 import { ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -10,6 +11,11 @@ export default function ShopOrdersPage() {
   const qc = useQueryClient()
   const { data: shops } = useQuery({ queryKey: ['my-shops'], queryFn: () => shopAPI.myShops().then(r => r.data) })
   const shop = shops?.[0]
+
+  // Live updates: new orders + status changes push in immediately over
+  // WebSocket. refetchInterval below stays as a safety-net fallback in
+  // case the socket drops and hasn't reconnected yet.
+  useShopNotifications(shop?.id)
 
   const { data: orders } = useQuery({
     queryKey: ['shop-orders', shop?.id],
