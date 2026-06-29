@@ -17,6 +17,35 @@ def _ensure_firebase():
             cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
 
+def _subscribe_to_topic(tokens: list[str], topic: str):
+    """Registers one or more device tokens to a topic (e.g. delivery_partners)
+    so a single notify_delivery_partners() call reaches all of them."""
+    _ensure_firebase()
+    if not tokens:
+        return
+    try:
+        messaging.subscribe_to_topic(tokens, topic)
+    except Exception as e:
+        print(f"FCM topic subscribe error: {e}")
+
+def _unsubscribe_from_topic(tokens: list[str], topic: str):
+    _ensure_firebase()
+    if not tokens:
+        return
+    try:
+        messaging.unsubscribe_from_topic(tokens, topic)
+    except Exception as e:
+        print(f"FCM topic unsubscribe error: {e}")
+
+async def subscribe_delivery_partner(fcm_token: str):
+    """Call this whenever a delivery-role user's FCM token is saved/updated,
+    so notify_delivery_partners() (topic-based) actually has subscribers.
+    Without this, that function silently sends to an empty topic."""
+    if not fcm_token:
+        return
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _subscribe_to_topic, [fcm_token], "delivery_partners")
+
 def _send_to_token(token: str, title: str, body: str, data: dict = None):
     """Single device pe notification bhejo"""
     _ensure_firebase()

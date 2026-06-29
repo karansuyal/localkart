@@ -42,17 +42,13 @@ export default function App() {
           icon: title.includes('Order') ? '🛍️' : title.includes('Delivery') ? '🛵' : '🔔',
           duration: 5000,
         })
-      })
+      }).catch(err => console.error('Foreground listener setup failed:', err))
     })
   }, [isAuthenticated])
 
-  // Delivery partners ko topic pe subscribe karo
-  useEffect(() => {
-    if (role === 'delivery') {
-      // Delivery partners automatically "delivery_partners" topic pe hote hain
-      // FCM token save hone ke baad backend pe subscribe hoga
-    }
-  }, [role])
+  // Delivery partners are subscribed to the "delivery_partners" FCM topic
+  // automatically on the backend, as soon as their fcm_token is saved
+  // (see PATCH /users/me) -- no client-side action needed here.
 
   const getHome = () => {
     if (!isAuthenticated) return '/login'
