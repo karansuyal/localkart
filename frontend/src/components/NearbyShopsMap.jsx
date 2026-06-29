@@ -3,6 +3,8 @@ import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-map
 import { Star, MapPin } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+const LIBRARIES = ['places'] // Component ke bahar — warning fix
+
 const mapContainerStyle = { width: '100%', height: '320px', borderRadius: '12px' }
 
 const mapOptions = {
@@ -19,7 +21,7 @@ export default function NearbyShopsMap({ shops, userLocation }) {
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: ['places']
+    libraries: LIBRARIES
   })
 
   const onLoad = useCallback(mapInstance => setMap(mapInstance), [])
