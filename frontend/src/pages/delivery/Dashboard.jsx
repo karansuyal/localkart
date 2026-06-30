@@ -27,7 +27,7 @@ export default function DeliveryDashboard() {
   const wsRef = useRef(null)
   useEffect(() => {
     if (!token) return
-    const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-i5wm.onrender.com'
+    const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-gj6g.onrender.com'
     const ws = new WebSocket(`${wsBase}/ws/delivery/available?token=${token}`)
     wsRef.current = ws
     ws.onmessage = (e) => {

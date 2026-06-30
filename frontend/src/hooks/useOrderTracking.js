@@ -12,7 +12,7 @@ export function useOrderTracking(orderId) {
   useEffect(() => {
     if (!orderId) return
 
-    const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-i5wm.onrender.com'
+    const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-gj6g.onrender.com'
     const ws = new WebSocket(`${wsBase}/ws/order/${orderId}`)
     wsRef.current = ws
 
