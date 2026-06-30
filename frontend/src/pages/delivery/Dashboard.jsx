@@ -46,7 +46,7 @@ export default function DeliveryDashboard() {
   // Location broadcast karo active delivery ke liye
   const startLocationBroadcast = (orderId) => {
     if (locationWsRefs.current[orderId]) return // already broadcasting
-    const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-i5wm.onrender.com'
+    const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-gj6g.onrender.com'
     const ws = new WebSocket(`${wsBase}/ws/delivery/${orderId}/location`)
     locationWsRefs.current[orderId] = ws
     setBroadcasting(prev => ({ ...prev, [orderId]: true }))
