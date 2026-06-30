@@ -3,13 +3,13 @@ import { useAuthStore } from '../context/store'
 
 // Main Backend API
 const api = axios.create({
-  baseURL: 'https://localkart-i5wm.onrender.com/api/v1',
+  baseURL: 'https://localkart-gj6g.onrender.com/api/v1',
   timeout: 15000,
 })
 
 // AI Backend
 const aiApi = axios.create({
-  baseURL: import.meta.env.VITE_AI_URL || 'https://localkart-i5wm.onrender.com',
+  baseURL: import.meta.env.VITE_AI_URL || 'https://localkart-gj6g.onrender.com/api/v1',
   timeout: 15000,
 })
 
