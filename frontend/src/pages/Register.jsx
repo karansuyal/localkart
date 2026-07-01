@@ -9,7 +9,7 @@ import { ShoppingBag } from 'lucide-react'
 
 const ROLES = [
   { value: 'customer', label: '🛍️ Customer', desc: 'Shop from local stores' },
-  { value: 'shopkeeper', label: '🏪 Shopkeeper', desc: 'Sell your products online' },
+  { value: 'shopkeeper', label: '🏪 Shopkeeper', desc: 'Sell your products online (admin approval needed)' },
   { value: 'delivery', label: '🚴 Delivery Partner', desc: 'Deliver and earn' },
 ]
 
@@ -26,11 +26,21 @@ export default function Register() {
       // Same normalization as Login: always +91 plus exactly 10 digits.
       const cleanPhone = `+91${data.phone.replace(/\D/g, '').slice(-10)}`
       const res = await authAPI.register({ ...data, phone: cleanPhone })
-      const { access_token, user_id, role } = res.data
+      const { access_token, user_id, role, is_active } = res.data
+
+      // Shopkeepers start "pending" until an admin approves them (see
+      // backend auth.py) -- don't log them straight into the dashboard,
+      // since every dashboard API call would just 403 as "Account disabled".
+      // Send them to login instead with a clear explanation.
+      if (role === 'shopkeeper' && !is_active) {
+        toast.success('Registration ho gaya! Aapka shopkeeper account admin approval ke baad active hoga. 🕒', { duration: 6000 })
+        navigate('/login')
+        return
+      }
+
       login({ id: user_id, role }, access_token)
       toast.success('Registration successful! Welcome to LocalKart 🎉')
-      if (role === 'shopkeeper') navigate('/shopkeeper')
-      else if (role === 'delivery') navigate('/delivery')
+      if (role === 'delivery') navigate('/delivery')
       else navigate('/home')
     } catch (err) {
       toast.error(getErrorMessage(err, 'Registration failed'))
@@ -95,6 +105,11 @@ export default function Register() {
                 </label>
               ))}
             </div>
+            {selectedRole === 'shopkeeper' && (
+              <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                🕒 Shopkeeper accounts admin approval ke baad hi active hote hain.
+              </p>
+            )}
           </div>
 
           <button type="submit" disabled={loading} className="btn-primary w-full py-3 disabled:opacity-50">

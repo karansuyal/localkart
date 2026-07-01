@@ -48,7 +48,7 @@ async def nearby_shops(
     store_type: Optional[StoreType] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(Shop).where(Shop.is_open == True)
+    query = select(Shop).where(Shop.is_open == True, Shop.is_verified == True)
     if category:
         query = query.where(Shop.category == category)
     if store_type:
@@ -72,7 +72,7 @@ async def nearest_dark_store(
     showing checkout ETA / before letting the customer order from a
     dark-store catalog.
     """
-    query = select(Shop).where(Shop.is_open == True, Shop.store_type == StoreType.dark_store)
+    query = select(Shop).where(Shop.is_open == True, Shop.is_verified == True, Shop.store_type == StoreType.dark_store)
     if category:
         query = query.where(Shop.category == category)
     result = await db.execute(query)

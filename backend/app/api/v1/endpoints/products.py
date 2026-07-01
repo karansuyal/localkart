@@ -61,6 +61,7 @@ async def search_products(
         .join(Shop, Shop.id == Product.shop_id)
         .where(
             Product.is_available == True,
+            Shop.is_verified == True,
             or_(
                 func.lower(Product.name).contains(q_norm),
                 func.lower(Product.category).contains(q_norm),

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../../services/api'
 import { useAuthStore } from '../../context/store'
-import { Users, Store, ShoppingBag, IndianRupee, LogOut, CheckCircle, UserX, ShieldCheck, MapPin, Star } from 'lucide-react'
+import { Users, Store, ShoppingBag, IndianRupee, LogOut, CheckCircle, UserX, ShieldCheck, MapPin, Star, UserCheck, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function AdminDashboard() {
@@ -36,6 +36,10 @@ export default function AdminDashboard() {
 
   const unverifiedShops = shops?.filter(s => !s.is_verified) || []
   const visibleShops = shopFilter === 'unverified' ? unverifiedShops : (shops || [])
+  // Newly registered shopkeepers start inactive until an admin approves
+  // them (see backend auth.py) -- surface them separately from the
+  // generic user list so they don't get lost among actual bans.
+  const pendingShopkeepers = users?.filter(u => u.role === 'shopkeeper' && !u.is_active) || []
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -58,6 +62,38 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Pending Shopkeeper Approvals */}
+        {pendingShopkeepers.length > 0 && (
+          <div>
+            <h2 className="font-bold text-gray-800 flex items-center gap-1.5 mb-2">
+              <UserCheck size={16} className="text-primary-600" />
+              Pending Shopkeeper Approvals
+              <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                {pendingShopkeepers.length}
+              </span>
+            </h2>
+            <div className="space-y-2">
+              {pendingShopkeepers.map(u => (
+                <div key={u.id} className="card border-2 border-amber-200 bg-amber-50 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-800 text-sm truncate">{u.name}</p>
+                    <p className="text-xs text-gray-500 flex items-center gap-1">
+                      <Clock size={10} />{u.phone} · registration ke baad se pending
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleMut.mutate(u.id)}
+                    disabled={toggleMut.isPending}
+                    className="btn-primary text-xs py-1.5 px-3 flex-shrink-0 disabled:opacity-60 flex items-center gap-1"
+                  >
+                    <CheckCircle size={13} /> Approve
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Shop Verification */}
         <div>
@@ -140,7 +176,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${user.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {user.is_active ? 'Active' : 'Banned'}
+                    {user.is_active ? 'Active' : (user.role === 'shopkeeper' ? 'Pending' : 'Banned')}
                   </span>
                   <button
                     onClick={() => toggleMut.mutate(user.id)}

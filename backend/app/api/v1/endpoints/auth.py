@@ -5,7 +5,7 @@ from sqlalchemy import select
 from jose import JWTError
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.schemas import UserRegister, UserLogin, TokenResponse
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
@@ -24,13 +24,17 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Create user
+    # Create user. Shopkeepers start as pending (is_active=False) so a
+    # random signup can't immediately open a live shop -- an admin has to
+    # approve them first via /admin/users/{id}/toggle. Customers and
+    # delivery partners are unaffected and stay active right away.
     user = User(
         name=data.name,
         phone=data.phone,
         email=data.email,
         hashed_password=hash_password(data.password),
-        role=data.role
+        role=data.role,
+        is_active=(data.role != UserRole.shopkeeper)
     )
     db.add(user)
     await db.commit()
@@ -42,7 +46,8 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
         user_id=user.id,
-        role=user.role.value
+        role=user.role.value,
+        is_active=user.is_active
     )
 
 @router.post("/login", response_model=TokenResponse)
@@ -55,6 +60,8 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     if not user.is_active:
+        if user.role == UserRole.shopkeeper:
+            raise HTTPException(status_code=403, detail="Aapka shopkeeper account abhi admin approval ke liye pending hai. Kripya thodi der baad try karein.")
         raise HTTPException(status_code=403, detail="Account disabled")
     
     # Generate tokens
@@ -63,7 +70,8 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
         user_id=user.id,
-        role=user.role.value
+        role=user.role.value,
+        is_active=user.is_active
     )
 
 async def get_current_user(

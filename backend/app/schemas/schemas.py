@@ -21,6 +21,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: int
     role: str
+    is_active: bool = True
 
 # ─── User ────────────────────────────────────────────────────────────────────
 class UserOut(BaseModel):

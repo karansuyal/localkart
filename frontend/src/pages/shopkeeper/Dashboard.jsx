@@ -38,7 +38,7 @@ export default function ShopkeeperDashboard() {
   const [locStatus, setLocStatus] = useState('idle') // idle | loading | success | error
   const [currentLocation, setCurrentLocation] = useState(null)
 
-  const { data: shops, isLoading: shopsLoading } = useQuery({ queryKey: ['my-shops'], queryFn: () => shopAPI.myShops().then(r => r.data) })
+  const { data: shops, isLoading: shopsLoading, error: shopsError } = useQuery({ queryKey: ['my-shops'], queryFn: () => shopAPI.myShops().then(r => r.data) })
   const shop = shops?.[0]
 
   // Live order updates -- new orders + status changes push in over
@@ -182,6 +182,29 @@ export default function ShopkeeperDashboard() {
   ]
 
   const locationSaved = locStatus === 'saved' || (shop?.latitude && shop?.longitude)
+
+  // Account is pending admin approval (or was disabled) -- every API call
+  // 403s as "Account disabled" in that case. Show a clear explanation
+  // instead of letting it fall through to the "setup your shop" screen,
+  // which would be confusing (looks like a missing shop, not a blocked account).
+  if (shopsError?.response?.status === 403) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="card max-w-sm text-center py-8">
+          <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <Clock size={26} className="text-amber-600" />
+          </div>
+          <h2 className="font-bold text-gray-800 mb-1">Account Pending Approval</h2>
+          <p className="text-sm text-gray-500">
+            {shopsError?.response?.data?.detail || 'Aapka shopkeeper account abhi admin approval ke liye pending hai. Approval hote hi aap login karke shop setup kar sakenge.'}
+          </p>
+          <button onClick={() => { logout(); navigate('/login') }} className="btn-secondary mt-5 text-sm py-2 px-4">
+            Login page pe jaayein
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // Still checking if this shopkeeper has a shop yet -- show a light
   // loading state instead of flashing the "no shop" UI for a moment.
