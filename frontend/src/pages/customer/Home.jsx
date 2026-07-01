@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { shopAPI, productAPI } from '../../services/api'
+import { shopAPI } from '../../services/api'
 import { useAuthStore, useCartStore } from '../../context/store'
-import { Search, ShoppingCart, MapPin, Star, Bot, LogOut, Store, Map, List, Zap, ChevronRight } from 'lucide-react'
+import { ShoppingCart, MapPin, Star, Bot, LogOut, Store, Map, List, Zap, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import NearbyShopsMap from '../../components/NearbyShopsMap'
+import SearchBar from '../../components/SearchBar'
+import SearchResults from '../../components/SearchResults'
 import { CATEGORIES } from '../../data/categories'
 import { useUserLocation } from '../../hooks/useUserLocation'
+import { useSmartSearch } from '../../hooks/useSmartSearch'
 
 // Rough ETA model: base pick/pack time + 2 min per km, capped for display sanity
 function estimateEta(distanceKm) {
@@ -17,7 +20,6 @@ function estimateEta(distanceKm) {
 }
 
 export default function CustomerHome() {
-  const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
   const [viewMode, setViewMode] = useState('list') // 'list' or 'map'
   // GPS -> cached last location -> IP-based location -> city fallback -> default.
@@ -26,6 +28,7 @@ export default function CustomerHome() {
   const { logout } = useAuthStore()
   const { count } = useCartStore()
   const navigate = useNavigate()
+  const search = useSmartSearch(userLocation)
 
   useEffect(() => {
     if (isDetecting) return
@@ -44,11 +47,6 @@ export default function CustomerHome() {
     queryFn: () => shopAPI.nearby(userLocation.lat, userLocation.lng, 10).then(r => r.data)
   })
 
-  const { data: searchResults } = useQuery({
-    queryKey: ['search', search],
-    queryFn: () => productAPI.search(search).then(r => r.data),
-    enabled: search.length > 2
-  })
 
   const filteredShops = shops?.filter(s => category === 'All' || s.category === category) || []
   const fastestEta = shops?.length ? estimateEta(0.8) : null
@@ -87,38 +85,16 @@ export default function CustomerHome() {
               </button>
             </div>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" size={16} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Maggi, chips, cold drink khojo..."
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl text-ink-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 bg-white"
-            />
-          </div>
+          <SearchBar s={search} />
         </div>
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-4">
 
-        {/* Search Results */}
-        {search.length > 2 && searchResults && (
-          <div className="mb-4">
-            <h2 className="font-display font-bold text-ink-800 mb-2 text-sm">Search Results ({searchResults.length})</h2>
-            <div className="space-y-2">
-              {searchResults.slice(0, 5).map(p => (
-                <div key={p.id} className="card flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-ink-800">{p.name}</p>
-                    <p className="text-xs text-ink-400">{p.category}</p>
-                  </div>
-                  <span className="text-ink-900 font-display font-bold">₹{p.price}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <SearchResults s={search} />
 
+        {!search.showResults && (
+        <>
         {/* Promo strip */}
         <div className="mb-4 bg-gradient-to-r from-primary-400 to-primary-300 rounded-2xl px-4 py-3 flex items-center justify-between overflow-hidden relative">
           <div>
@@ -233,6 +209,8 @@ export default function CustomerHome() {
               )
             })}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

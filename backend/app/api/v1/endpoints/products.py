@@ -4,8 +4,12 @@ from sqlalchemy import select
 from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.user import User, Product, Shop, UserRole
-from app.schemas.schemas import ProductCreate, ProductOut, ProductUpdate
+from app.models.user import User, Product, Shop, OrderItem, UserRole
+from app.schemas.schemas import (
+    ProductCreate, ProductOut, ProductUpdate,
+    ProductSearchOut, ShopMiniOut, SearchSuggestionOut,
+)
+from app.api.v1.endpoints.shops import haversine
 
 router = APIRouter()
 
@@ -29,19 +33,165 @@ async def get_shop_products(shop_id: int, category: Optional[str] = None, db: As
     result = await db.execute(query)
     return result.scalars().all()
 
-@router.get("/search", response_model=List[ProductOut])
-async def search_products(q: str = Query(..., min_length=1), db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import or_, func
-    result = await db.execute(
-        select(Product).where(
+@router.get("/search", response_model=List[ProductSearchOut])
+async def search_products(
+    q: str = Query(..., min_length=1),
+    lat: Optional[float] = Query(None, description="Customer latitude -- enables distance sort & distance_km in results"),
+    lng: Optional[float] = Query(None, description="Customer longitude"),
+    category: Optional[str] = Query(None),
+    sort: str = Query("relevance", pattern="^(relevance|price_low|price_high|distance|rating)$"),
+    limit: int = Query(40, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Advanced product search -- like a local Zomato/Blinkit search.
+    Matches on product name, category, tags AND shop name (so "sharma"
+    finds Sharma Kirana Store too), and returns each match together with
+    its shop's info (name, rating, open/closed, distance) since the same
+    item can be sold by several shops nearby.
+    """
+    from sqlalchemy import or_, func, cast, String
+
+    q_norm = q.strip().lower()
+    if not q_norm:
+        return []
+
+    query = (
+        select(Product, Shop)
+        .join(Shop, Shop.id == Product.shop_id)
+        .where(
             Product.is_available == True,
             or_(
-                func.lower(Product.name).contains(q.lower()),
-                func.lower(Product.category).contains(q.lower())
-            )
-        ).limit(50)
+                func.lower(Product.name).contains(q_norm),
+                func.lower(Product.category).contains(q_norm),
+                func.lower(cast(Product.tags, String)).contains(q_norm),
+                func.lower(Shop.name).contains(q_norm),
+            ),
+        )
     )
-    return result.scalars().all()
+    if category:
+        query = query.where(Product.category == category)
+
+    # Pull a generous pool and rank/sort in Python -- keeps the relevance
+    # + distance scoring logic simple and DB-agnostic.
+    result = await db.execute(query.limit(300))
+    rows = result.all()
+
+    def relevance_rank(product: Product, shop: Shop) -> int:
+        name = product.name.lower()
+        if name == q_norm:
+            return 0
+        if name.startswith(q_norm):
+            return 1
+        if q_norm in name:
+            return 2
+        if product.category and q_norm in product.category.lower():
+            return 3
+        if q_norm in shop.name.lower():
+            return 4
+        return 5
+
+    scored = []
+    for product, shop in rows:
+        distance = haversine(lat, lng, shop.latitude, shop.longitude) if (lat is not None and lng is not None) else None
+        scored.append((product, shop, distance, relevance_rank(product, shop)))
+
+    if sort == "price_low":
+        scored.sort(key=lambda x: x[0].price)
+    elif sort == "price_high":
+        scored.sort(key=lambda x: -x[0].price)
+    elif sort == "distance":
+        scored.sort(key=lambda x: x[2] if x[2] is not None else float("inf"))
+    elif sort == "rating":
+        scored.sort(key=lambda x: -(x[1].rating or 0))
+    else:  # relevance -- best text match first, then prefer open + nearby + well-rated shops
+        scored.sort(key=lambda x: (
+            x[3],
+            0 if x[1].is_open else 1,
+            x[2] if x[2] is not None else float("inf"),
+            -(x[1].rating or 0),
+        ))
+
+    out: List[ProductSearchOut] = []
+    for product, shop, distance, _ in scored[:limit]:
+        item = ProductSearchOut.model_validate(product)
+        item.shop = ShopMiniOut.model_validate(shop)
+        item.distance_km = round(distance, 2) if distance is not None else None
+        out.append(item)
+    return out
+
+
+@router.get("/search/suggestions", response_model=List[SearchSuggestionOut])
+async def search_suggestions(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(8, ge=1, le=15),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lightweight autocomplete: matching product names + categories, for the search-as-you-type dropdown."""
+    from sqlalchemy import func
+
+    q_norm = q.strip().lower()
+    if not q_norm:
+        return []
+
+    name_result = await db.execute(
+        select(Product.name).where(
+            Product.is_available == True,
+            func.lower(Product.name).contains(q_norm),
+        ).distinct().limit(limit * 3)
+    )
+    cat_result = await db.execute(
+        select(Product.category).where(
+            Product.is_available == True,
+            Product.category.isnot(None),
+            func.lower(Product.category).contains(q_norm),
+        ).distinct().limit(limit)
+    )
+
+    seen = set()
+    starts, contains = [], []
+    for name in name_result.scalars().all():
+        key = name.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        bucket = starts if key.startswith(q_norm) else contains
+        bucket.append(SearchSuggestionOut(text=name, type="product"))
+
+    for cat in cat_result.scalars().all():
+        key = f"cat::{cat.strip().lower()}"
+        if not cat or key in seen:
+            continue
+        seen.add(key)
+        contains.append(SearchSuggestionOut(text=cat, type="category"))
+
+    return (starts + contains)[:limit]
+
+
+@router.get("/search/trending", response_model=List[str])
+async def trending_searches(db: AsyncSession = Depends(get_db)):
+    """Popular searches based on most-ordered products, for the empty-state 'Trending' chips."""
+    from sqlalchemy import func, desc
+
+    result = await db.execute(
+        select(Product.name, func.count(OrderItem.id).label("cnt"))
+        .join(OrderItem, OrderItem.product_id == Product.id)
+        .group_by(Product.name)
+        .order_by(desc("cnt"))
+        .limit(8)
+    )
+    trending = [row[0] for row in result.all()]
+
+    if len(trending) < 6:
+        # Fresh deployment with little/no order history yet -- fall back to
+        # generic everyday items so the UI never looks empty.
+        fallback = ["Maggi", "Milk", "Bread", "Chips", "Cold Drink", "Eggs", "Atta", "Rice"]
+        for item in fallback:
+            if item not in trending:
+                trending.append(item)
+            if len(trending) >= 8:
+                break
+    return trending
 
 @router.get("/{product_id}", response_model=ProductOut)
 async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):

@@ -140,6 +140,30 @@ class ProductOut(BaseModel):
     created_at: datetime
     class Config: from_attributes = True
 
+# Lightweight shop info attached to each search result -- lets the frontend
+# show "available at <shop name>" (and distance/open-status) per result,
+# since the same item can be sold by multiple shops.
+class ShopMiniOut(BaseModel):
+    id: int
+    name: str
+    address: str
+    image_url: Optional[str] = None
+    rating: float
+    total_reviews: int
+    is_open: bool
+    is_verified: bool
+    category: Optional[str] = None
+    store_type: StoreType
+    class Config: from_attributes = True
+
+class ProductSearchOut(ProductOut):
+    shop: ShopMiniOut
+    distance_km: Optional[float] = None
+
+class SearchSuggestionOut(BaseModel):
+    text: str
+    type: str  # 'product' | 'category' | 'shop'
+
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     price: Optional[float] = None

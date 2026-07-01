@@ -61,7 +61,10 @@ export const shopAPI = {
 export const productAPI = {
   byShop: (shopId, category) =>
     api.get(`/products/shop/${shopId}`, { params: category ? { category } : {} }),
-  search: (q) => api.get('/products/search', { params: { q } }),
+  // opts: { lat, lng, sort, category, limit } -- lat/lng enable distance + nearest-first sorting
+  search: (q, opts = {}) => api.get('/products/search', { params: { q, ...opts } }),
+  searchSuggestions: (q) => api.get('/products/search/suggestions', { params: { q } }),
+  trendingSearches: () => api.get('/products/search/trending'),
   get: (id) => api.get(`/products/${id}`),
   create: (shopId, data) => api.post('/products/', data, { params: { shop_id: shopId } }),
   update: (id, data) => api.patch(`/products/${id}`, data),
