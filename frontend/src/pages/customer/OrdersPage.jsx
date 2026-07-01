@@ -195,7 +195,11 @@ function DeliveryPartnerCard({ name, phone }) {
 }
 
 function LiveOrderCard({ order }) {
-  const { status: liveStatus, message, eta, deliveryLocation, lastLocationUpdate, deliveryName, deliveryPhone, connected } = useOrderTracking(order.id)
+  // Past orders don't need a live socket at all -- see useOrderTracking's
+  // `enabled` param. This is what was causing 5-10s slow loads: every
+  // order (including old delivered ones) used to open its own WebSocket.
+  const wasActive = !['delivered', 'cancelled'].includes(order.status)
+  const { status: liveStatus, message, eta, deliveryLocation, lastLocationUpdate, deliveryName, deliveryPhone, connected } = useOrderTracking(order.id, wasActive)
   const currentStatus = liveStatus || order.status
   const stepIdx = STEP_INDEX[currentStatus] ?? 0
   const [showOtp, setShowOtp] = useState(false)
