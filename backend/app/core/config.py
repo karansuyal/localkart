@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # Unsplash
     UNSPLASH_ACCESS_KEY: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
     UNSPLASH_SECRET_KEY: str = os.getenv("UNSPLASH_SECRET_KEY", "")
+    # PhonePe (Standard Checkout, PG API v2)
+    PHONEPE_CLIENT_ID: str = ""
+    PHONEPE_CLIENT_SECRET: str = ""
+    PHONEPE_CLIENT_VERSION: str = "1"
+    PHONEPE_ENV: str = "SANDBOX"
+    PHONEPE_CALLBACK_USERNAME: str = ""
+    PHONEPE_CALLBACK_PASSWORD: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
 
     @property
     def cors_origins_list(self) -> List[str]:
