@@ -19,7 +19,7 @@ export default function CustomerHome() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
   const [viewMode, setViewMode] = useState('list') // 'list' or 'map'
-  const [userLocation, setUserLocation] = useState({ lat: 27.8974, lng: 78.0880 }) // Aligarh default
+  const [userLocation, setUserLocation] = useState({ lat: 29.0531, lng: 79.5262}) // Aligarh default
   const { logout } = useAuthStore()
   const { count } = useCartStore()
   const navigate = useNavigate()
