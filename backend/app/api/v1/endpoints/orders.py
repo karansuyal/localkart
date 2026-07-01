@@ -119,17 +119,24 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
 
 @router.get("/my", response_model=List[OrderOut])
 async def my_orders(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Pehle har order ke liye alag se Delivery query chalti thi (N+1 pattern
+    # -- 10 orders = 11 round-trips). Supabase session-pooler ke limited
+    # connections + saath mein chal rahi WebSocket connections (live
+    # tracking) ke saath milkar ye pool ko busy rakhta tha, jisse request
+    # 15s timeout tak hang ho jaati thi. Ab ek hi query mein delivery +
+    # delivery.partner eager-load ho jaate hain.
     result = await db.execute(
-        select(Order).options(selectinload(Order.items))
+        select(Order)
+        .options(
+            selectinload(Order.items),
+            selectinload(Order.delivery).selectinload(Delivery.partner),
+        )
         .where(Order.user_id == current_user.id)
         .order_by(Order.created_at.desc())
     )
     orders = result.scalars().all()
     for order in orders:
-        d_res = await db.execute(
-            select(Delivery).options(selectinload(Delivery.partner)).where(Delivery.order_id == order.id)
-        )
-        delivery = d_res.scalar_one_or_none()
+        delivery = order.delivery
         order.__dict__['otp'] = delivery.otp if delivery and delivery.otp else None
         order.__dict__['delivery_partner_name'] = delivery.partner.name if delivery and delivery.partner else None
         order.__dict__['delivery_partner_phone'] = delivery.partner.phone if delivery and delivery.partner else None
