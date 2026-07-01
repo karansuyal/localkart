@@ -265,8 +265,8 @@ export default function ShopPage() {
 
       {/* Sticky Cart Button */}
       {cartCount > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-30 lk-animate-in">
-          <Link to="/cart" className="flex items-center justify-between bg-ink-900 text-white px-5 py-3.5 rounded-2xl shadow-xl shadow-black/20 hover:bg-ink-800 transition-colors">
+        <div className="fixed bottom-4 inset-x-0 z-30 flex justify-center px-4 lk-animate-in">
+          <Link to="/cart" className="flex items-center justify-center gap-3 bg-ink-900 text-white px-5 py-3.5 rounded-2xl shadow-xl shadow-black/20 hover:bg-ink-800 transition-colors w-full max-w-lg">
             <span className="flex items-center gap-2">
               <span className="bg-primary-400 text-ink-900 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center">{cartCount}</span>
               <span className="text-sm text-ink-100/70">₹{cartTotal}</span>
