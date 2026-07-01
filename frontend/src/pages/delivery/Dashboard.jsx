@@ -43,7 +43,12 @@ export default function DeliveryDashboard() {
     return () => { clearInterval(ping); ws.close() }
   }, [token])
 
-  // Location broadcast karo active delivery ke liye
+  // Location broadcast karo active delivery ke liye — har 5 minute mein ek
+  // baar (continuous watchPosition battery aur data dono zyada khaata hai,
+  // hyperlocal delivery ke liye itni frequency ki zaroorat nahi).
+  const LOCATION_INTERVAL_MS = 5 * 1000 // 5 seconds
+  const locationIntervalRefs = useRef({}) // {orderId: intervalId}
+
   const startLocationBroadcast = (orderId) => {
     if (locationWsRefs.current[orderId]) return // already broadcasting
     const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-gj6g.onrender.com'
@@ -51,39 +56,46 @@ export default function DeliveryDashboard() {
     locationWsRefs.current[orderId] = ws
     setBroadcasting(prev => ({ ...prev, [orderId]: true }))
 
+    const sendLocationOnce = () => {
+      if (!navigator.geolocation) return
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'location',
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              order_id: orderId,
+            }))
+          }
+        },
+        (err) => console.warn('GPS error:', err),
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
+      )
+    }
+
     ws.onopen = () => {
-      // GPS se location lo aur bhejte raho
-      if (navigator.geolocation) {
-        watchRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'location',
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                order_id: orderId,
-              }))
-            }
-          },
-          (err) => console.warn('GPS error:', err),
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-        )
-      }
+      sendLocationOnce() // pehli location turant bhejo
+      locationIntervalRefs.current[orderId] = setInterval(sendLocationOnce, LOCATION_INTERVAL_MS)
     }
     ws.onclose = () => {
+      if (locationIntervalRefs.current[orderId]) {
+        clearInterval(locationIntervalRefs.current[orderId])
+        delete locationIntervalRefs.current[orderId]
+      }
       setBroadcasting(prev => ({ ...prev, [orderId]: false }))
       delete locationWsRefs.current[orderId]
     }
-    toast.success('📍 Live location sharing shuru!')
+    toast.success('📍 Live location sharing shuru! (har 5 sec mein update)')
   }
 
   const stopLocationBroadcast = (orderId) => {
     if (locationWsRefs.current[orderId]) {
       locationWsRefs.current[orderId].close()
     }
-    if (watchRef.current) {
-      navigator.geolocation.clearWatch(watchRef.current)
-      watchRef.current = null
+    if (locationIntervalRefs.current[orderId]) {
+      clearInterval(locationIntervalRefs.current[orderId])
+      delete locationIntervalRefs.current[orderId]
     }
     setBroadcasting(prev => ({ ...prev, [orderId]: false }))
   }

@@ -143,6 +143,7 @@ async def accept_delivery(
             "eta_minutes": order.eta_minutes if order else None,
             "delivery_partner_id": current_user.id,
             "delivery_partner_name": current_user.name,
+            "delivery_partner_phone": current_user.phone,
         })
     except Exception:
         pass  # WebSocket fail ho to order pe asar na pade

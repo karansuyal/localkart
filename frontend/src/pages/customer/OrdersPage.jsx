@@ -2,30 +2,45 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { orderAPI } from '../../services/api'
 import { useOrderTracking } from '../../hooks/useOrderTracking'
-import { ArrowLeft, Package, Clock, MapPin, IndianRupee, Wifi, WifiOff } from 'lucide-react'
+import { ArrowLeft, Package, Clock, MapPin, IndianRupee, Wifi, WifiOff, Phone, Navigation } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
-// Default marker icon path breaks with Vite's bundler, so point it at a CDN.
+// Colored marker icons -- green for the delivery partner, blue for the
+// customer's own delivery address. No API key needed, hosted on a free CDN.
 const deliveryIcon = new L.Icon({
   iconUrl: 'https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-2x-green.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
+})
+const homeIcon = new L.Icon({
+  iconUrl: 'https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-2x-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
 })
 
-// Delivery partner ki location websocket se live update hoti rehti hai --
-// MapContainer ka `center` prop sirf mount pe kaam karta hai, isliye map ko
-// har naye location update pe manually re-center karna padta hai.
-function Recenter({ lat, lng }) {
+// Haversine formula -- seedhi-line distance km mein
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// Delivery partner ki location har 5 sec mein update hoti hai -- map ko
+// dono points (partner + customer) ke hisaab se auto fit/recenter karo.
+function AutoFit({ points }) {
   const map = useMap()
   useEffect(() => {
-    map.setView([lat, lng], map.getZoom())
-  }, [lat, lng]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (points.length === 2) {
+      map.fitBounds(L.latLngBounds(points), { padding: [28, 28], maxZoom: 16 })
+    } else if (points.length === 1) {
+      map.setView(points[0], 15)
+    }
+  }, [JSON.stringify(points)]) // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }
 
@@ -56,42 +71,99 @@ const STATUS_MSG = {
   cancelled: 'Order cancel ho gaya',
 }
 
-function DeliveryMap({ deliveryLocation, deliveryAddress }) {
+// Zomato-style average city delivery speed assumption (km/h) -- sirf
+// straight-line distance se rough ETA nikalne ke liye, actual road route nahi.
+const AVG_SPEED_KMH = 20
+
+function DeliveryMap({ deliveryLocation, customerLocation }) {
   if (!deliveryLocation) return null
   const { lat, lng } = deliveryLocation
+  const hasCustomer = customerLocation?.lat && customerLocation?.lng
+  const points = hasCustomer ? [[lat, lng], [customerLocation.lat, customerLocation.lng]] : [[lat, lng]]
+  const dist = hasCustomer ? distanceKm(lat, lng, customerLocation.lat, customerLocation.lng) : null
+  const etaMin = dist != null ? Math.max(1, Math.round((dist / AVG_SPEED_KMH) * 60)) : null
 
   return (
     <div className="mt-3 rounded-xl overflow-hidden border border-gray-200">
-      <div className="bg-green-50 px-3 py-1.5 flex items-center gap-2 text-xs text-green-700 font-medium">
-        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-        Delivery Partner Live Location
+      <div className="bg-green-50 px-3 py-1.5 flex items-center justify-between gap-2 text-xs text-green-700 font-medium">
+        <span className="flex items-center gap-2">
+          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+          Delivery Partner Live Location
+        </span>
+        {dist != null && (
+          <span className="flex items-center gap-1 text-green-800">
+            <Navigation size={11} />{dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(1)} km`} away
+          </span>
+        )}
       </div>
-      <MapContainer
-        center={[lat, lng]}
-        zoom={15}
-        scrollWheelZoom={false}
-        style={{ height: '160px', width: '100%' }}
-      >
-        {/* CARTO Voyager tiles -- free forever, no API key, no billing */}
+      <MapContainer center={[lat, lng]} zoom={15} scrollWheelZoom={false} style={{ height: '180px', width: '100%' }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
-        <Recenter lat={lat} lng={lng} />
+        <AutoFit points={points} />
+        {hasCustomer && (
+          <Polyline
+            positions={points}
+            pathOptions={{ color: '#4F46E5', weight: 3, dashArray: '6 8', opacity: 0.8 }}
+          />
+        )}
         <Marker position={[lat, lng]} icon={deliveryIcon}>
           <Popup>Delivery partner yahan hai 🛵</Popup>
         </Marker>
+        {hasCustomer && (
+          <Marker position={[customerLocation.lat, customerLocation.lng]} icon={homeIcon}>
+            <Popup>Aapka delivery address 🏠</Popup>
+          </Marker>
+        )}
       </MapContainer>
+      {etaMin != null && (
+        <div className="bg-white px-3 py-1.5 text-xs text-gray-600 border-t border-gray-100 flex items-center gap-1">
+          <Clock size={11} /> Lagbhag <span className="font-semibold text-gray-800">{etaMin} min</span> mein pahunch sakta hai
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Delivery partner ka naam + call button -- picked_up hone ke baad dikhta hai
+function DeliveryPartnerCard({ name, phone }) {
+  if (!name) return null
+  return (
+    <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+          {name.charAt(0).toUpperCase()}
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-gray-800">{name}</p>
+          <p className="text-xs text-gray-500">Delivery Partner</p>
+        </div>
+      </div>
+      {phone && (
+        <a
+          href={`tel:${phone}`}
+          className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors"
+        >
+          <Phone size={13} /> Call
+        </a>
+      )}
     </div>
   )
 }
 
 function LiveOrderCard({ order }) {
-  const { status: liveStatus, message, eta, deliveryLocation, deliveryName, connected } = useOrderTracking(order.id)
+  const { status: liveStatus, message, eta, deliveryLocation, deliveryName, deliveryPhone, connected } = useOrderTracking(order.id)
   const currentStatus = liveStatus || order.status
   const stepIdx = STEP_INDEX[currentStatus] ?? 0
   const [showOtp, setShowOtp] = useState(false)
   const isActive = !['delivered', 'cancelled'].includes(currentStatus)
+
+  // Live websocket value ko priority do, warna REST se saved value fallback ke taur pe
+  const partnerName = deliveryName || order.delivery_partner_name
+  const partnerPhone = deliveryPhone || order.delivery_partner_phone
+  const customerLocation = order.delivery_lat && order.delivery_lng
+    ? { lat: order.delivery_lat, lng: order.delivery_lng } : null
 
   return (
     <div className={`card mb-4 ${isActive ? 'border-2 border-primary-200' : 'border border-gray-200'}`}>
@@ -130,7 +202,6 @@ function LiveOrderCard({ order }) {
           <span className="text-lg">{STEPS[stepIdx]?.icon || '🔔'}</span>
           <p className="text-sm text-primary-700 font-medium">
             {message || STATUS_MSG[currentStatus]}
-            {deliveryName && <span className="text-xs text-primary-500 block">Partner: {deliveryName}</span>}
           </p>
         </div>
       )}
@@ -182,9 +253,14 @@ function LiveOrderCard({ order }) {
         </div>
       </div>
 
-      {/* Live Map — pickup ke baad */}
+      {/* Delivery partner ka naam + call button — accept hote hi dikh jaata hai */}
+      {isActive && currentStatus !== 'pending' && (
+        <DeliveryPartnerCard name={partnerName} phone={partnerPhone} />
+      )}
+
+      {/* Live Map — pickup ke baad, route line + live distance ke saath */}
       {currentStatus === 'picked_up' && (
-        <DeliveryMap deliveryLocation={deliveryLocation} deliveryAddress={order.delivery_address} />
+        <DeliveryMap deliveryLocation={deliveryLocation} customerLocation={customerLocation} />
       )}
 
       {/* OTP */}

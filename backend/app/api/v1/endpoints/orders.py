@@ -126,9 +126,13 @@ async def my_orders(db: AsyncSession = Depends(get_db), current_user: User = Dep
     )
     orders = result.scalars().all()
     for order in orders:
-        d_res = await db.execute(select(Delivery).where(Delivery.order_id == order.id))
+        d_res = await db.execute(
+            select(Delivery).options(selectinload(Delivery.partner)).where(Delivery.order_id == order.id)
+        )
         delivery = d_res.scalar_one_or_none()
         order.__dict__['otp'] = delivery.otp if delivery and delivery.otp else None
+        order.__dict__['delivery_partner_name'] = delivery.partner.name if delivery and delivery.partner else None
+        order.__dict__['delivery_partner_phone'] = delivery.partner.phone if delivery and delivery.partner else None
     return orders
 
 @router.get("/shop/{shop_id}", response_model=List[OrderOut])
@@ -148,6 +152,13 @@ async def get_order(order_id: int, db: AsyncSession = Depends(get_db), current_u
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    d_res = await db.execute(
+        select(Delivery).options(selectinload(Delivery.partner)).where(Delivery.order_id == order.id)
+    )
+    delivery = d_res.scalar_one_or_none()
+    order.__dict__['otp'] = delivery.otp if delivery and delivery.otp else None
+    order.__dict__['delivery_partner_name'] = delivery.partner.name if delivery and delivery.partner else None
+    order.__dict__['delivery_partner_phone'] = delivery.partner.phone if delivery and delivery.partner else None
     return order
 
 @router.patch("/{order_id}/status")

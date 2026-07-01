@@ -6,6 +6,7 @@ export function useOrderTracking(orderId) {
   const [eta, setEta] = useState(null)
   const [deliveryLocation, setDeliveryLocation] = useState(null) // { lat, lng }
   const [deliveryName, setDeliveryName] = useState(null)
+  const [deliveryPhone, setDeliveryPhone] = useState(null)
   const [connected, setConnected] = useState(false)
   const wsRef = useRef(null)
 
@@ -28,6 +29,7 @@ export function useOrderTracking(orderId) {
           if (data.message) setMessage(data.message)
           if (data.eta_minutes) setEta(data.eta_minutes)
           if (data.delivery_partner_name) setDeliveryName(data.delivery_partner_name)
+          if (data.delivery_partner_phone) setDeliveryPhone(data.delivery_partner_phone)
 
           // Browser notification
           if (Notification.permission === 'granted' && data.message) {
@@ -63,5 +65,5 @@ export function useOrderTracking(orderId) {
     }
   }, [])
 
-  return { status, message, eta, deliveryLocation, deliveryName, connected }
+  return { status, message, eta, deliveryLocation, deliveryName, deliveryPhone, connected }
 }

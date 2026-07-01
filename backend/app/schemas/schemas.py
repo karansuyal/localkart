@@ -182,11 +182,15 @@ class OrderOut(BaseModel):
     total_amount: float
     delivery_fee: float
     delivery_address: str
+    delivery_lat: Optional[float] = None
+    delivery_lng: Optional[float] = None
     notes: Optional[str]
     payment_mode: str
     payment_status: PaymentStatus
     eta_minutes: Optional[int]
     otp: Optional[str] = None  # Delivery OTP for customer
+    delivery_partner_name: Optional[str] = None
+    delivery_partner_phone: Optional[str] = None
     items: List[OrderItemOut]
     created_at: datetime
     class Config: from_attributes = True
