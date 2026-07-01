@@ -3,7 +3,31 @@ import { Link } from 'react-router-dom'
 import { orderAPI } from '../../services/api'
 import { useOrderTracking } from '../../hooks/useOrderTracking'
 import { ArrowLeft, Package, Clock, MapPin, IndianRupee, Wifi, WifiOff } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
+// Default marker icon path breaks with Vite's bundler, so point it at a CDN.
+const deliveryIcon = new L.Icon({
+  iconUrl: 'https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+})
+
+// Delivery partner ki location websocket se live update hoti rehti hai --
+// MapContainer ka `center` prop sirf mount pe kaam karta hai, isliye map ko
+// har naye location update pe manually re-center karna padta hai.
+function Recenter({ lat, lng }) {
+  const map = useMap()
+  useEffect(() => {
+    map.setView([lat, lng], map.getZoom())
+  }, [lat, lng]) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
 
 const STEPS = [
   { key: 'pending',   icon: '🛍️', label: 'Order Placed' },
@@ -35,7 +59,6 @@ const STATUS_MSG = {
 function DeliveryMap({ deliveryLocation, deliveryAddress }) {
   if (!deliveryLocation) return null
   const { lat, lng } = deliveryLocation
-  const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=400x200&markers=color:red%7C${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`
 
   return (
     <div className="mt-3 rounded-xl overflow-hidden border border-gray-200">
@@ -43,20 +66,22 @@ function DeliveryMap({ deliveryLocation, deliveryAddress }) {
         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
         Delivery Partner Live Location
       </div>
-      {import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
-        <img src={mapUrl} alt="Delivery location" className="w-full h-40 object-cover" />
-      ) : (
-        <div className="bg-gray-100 h-32 flex items-center justify-center">
-          <div className="text-center text-gray-500 text-sm">
-            <MapPin size={20} className="mx-auto mb-1 text-red-500" />
-            <p>📍 {lat.toFixed(4)}, {lng.toFixed(4)}</p>
-            <a href={`https://maps.google.com/?q=${lat},${lng}`} target="_blank" rel="noreferrer"
-              className="text-xs text-blue-600 underline mt-1 block">
-              Maps mein dekhein
-            </a>
-          </div>
-        </div>
-      )}
+      <MapContainer
+        center={[lat, lng]}
+        zoom={15}
+        scrollWheelZoom={false}
+        style={{ height: '160px', width: '100%' }}
+      >
+        {/* CARTO Voyager tiles -- free forever, no API key, no billing */}
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        />
+        <Recenter lat={lat} lng={lng} />
+        <Marker position={[lat, lng]} icon={deliveryIcon}>
+          <Popup>Delivery partner yahan hai 🛵</Popup>
+        </Marker>
+      </MapContainer>
     </div>
   )
 }

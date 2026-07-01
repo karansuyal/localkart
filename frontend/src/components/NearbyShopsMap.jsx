@@ -1,128 +1,91 @@
-import { useState, useCallback } from 'react'
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api'
+import { useState } from 'react'
+import { MapContainer, TileLayer, Marker, CircleMarker, Popup } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { Star, MapPin } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-const LIBRARIES = ['places'] // Component ke bahar — warning fix
-
-const mapContainerStyle = { width: '100%', height: '320px', borderRadius: '12px' }
-
-const mapOptions = {
-  disableDefaultUI: true,
-  zoomControl: true,
-  styles: [
-    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }
-  ]
-}
+// Colored pin icons for shop markers (green = open, red = closed).
+// Hosted on a public CDN — no API key needed, works exactly like Google's
+// colored markers used to.
+const shopIcon = (isOpen) => new L.Icon({
+  iconUrl: `https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-2x-${isOpen ? 'green' : 'red'}.png`,
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [22, 36],
+  iconAnchor: [11, 36],
+  popupAnchor: [0, -32],
+  shadowSize: [36, 36],
+})
 
 export default function NearbyShopsMap({ shops, userLocation }) {
   const [selectedShop, setSelectedShop] = useState(null)
-  const [map, setMap] = useState(null)
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: LIBRARIES
-  })
-
-  const onLoad = useCallback(mapInstance => setMap(mapInstance), [])
-  const onUnmount = useCallback(() => setMap(null), [])
 
   // Sirf wahi shops dikhao jinka lat/lng DB mein hai
   const shopsWithLocation = shops?.filter(s => s.latitude && s.longitude) || []
   const shopsWithoutLocation = shops?.filter(s => !s.latitude || !s.longitude) || []
 
-  if (loadError) return (
-    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center text-red-600 text-sm">
-      Maps load nahi hua. API key check karo.
-    </div>
-  )
-
-  if (!isLoaded) return (
-    <div className="bg-gray-100 rounded-xl h-[320px] flex items-center justify-center">
-      <div className="text-center text-gray-500">
-        <div className="w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p className="text-sm">Map load ho raha hai...</p>
-      </div>
-    </div>
-  )
-
   return (
     <div className="space-y-2">
       <div className="relative">
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          center={userLocation}
+        <MapContainer
+          center={[userLocation.lat, userLocation.lng]}
           zoom={14}
-          options={mapOptions}
-          onLoad={onLoad}
-          onUnmount={onUnmount}
+          scrollWheelZoom={true}
+          style={{ width: '100%', height: '320px', borderRadius: '12px' }}
         >
-          {/* User location marker — blue pulsing dot */}
-          <Marker
-            position={userLocation}
-            icon={{
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 9,
-              fillColor: '#4F46E5',
-              fillOpacity: 1,
-              strokeColor: '#fff',
-              strokeWeight: 2.5,
-            }}
-            title="Aap yahan hain"
-            zIndex={999}
+          {/* CARTO Voyager tiles -- free forever, no API key, no billing */}
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           />
+
+          {/* User location marker — blue dot */}
+          <CircleMarker
+            center={[userLocation.lat, userLocation.lng]}
+            radius={9}
+            pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#4F46E5', fillOpacity: 1 }}
+          >
+            <Popup>Aap yahan hain</Popup>
+          </CircleMarker>
 
           {/* Shop markers — sirf jinke paas real lat/lng hai */}
           {shopsWithLocation.map(shop => (
             <Marker
               key={shop.id}
-              position={{ lat: shop.latitude, lng: shop.longitude }}
-              onClick={() => setSelectedShop(shop)}
-              icon={{
-                path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-                scale: 6,
-                fillColor: shop.is_open ? '#16A34A' : '#DC2626',
-                fillOpacity: 1,
-                strokeColor: '#fff',
-                strokeWeight: 1.5,
-              }}
-            />
-          ))}
-
-          {/* InfoWindow for selected shop */}
-          {selectedShop && (
-            <InfoWindow
-              position={{ lat: selectedShop.latitude, lng: selectedShop.longitude }}
-              onCloseClick={() => setSelectedShop(null)}
+              position={[shop.latitude, shop.longitude]}
+              icon={shopIcon(shop.is_open)}
+              eventHandlers={{ click: () => setSelectedShop(shop) }}
             >
-              <div className="p-1 min-w-[170px]">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="font-semibold text-gray-800 text-sm">{selectedShop.name}</p>
-                  <span className={`text-xs font-medium ml-2 ${selectedShop.is_open ? 'text-green-600' : 'text-red-500'}`}>
-                    {selectedShop.is_open ? 'Open' : 'Closed'}
-                  </span>
+              <Popup>
+                <div className="p-1 min-w-[170px]">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="font-semibold text-gray-800 text-sm">{shop.name}</p>
+                    <span className={`text-xs font-medium ml-2 ${shop.is_open ? 'text-green-600' : 'text-red-500'}`}>
+                      {shop.is_open ? 'Open' : 'Closed'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-1">{shop.address}</p>
+                  <div className="flex items-center gap-1 mb-2">
+                    <Star size={11} className="text-yellow-500" fill="currentColor" />
+                    <span className="text-xs text-gray-600">{shop.rating?.toFixed(1)}</span>
+                    {shop.category && (
+                      <span className="text-xs text-gray-400 ml-1">• {shop.category}</span>
+                    )}
+                  </div>
+                  <Link
+                    to={`/shop/${shop.id}`}
+                    className="block text-center bg-indigo-600 text-white text-xs py-1.5 px-3 rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Shop kholein →
+                  </Link>
                 </div>
-                <p className="text-xs text-gray-500 mb-1">{selectedShop.address}</p>
-                <div className="flex items-center gap-1 mb-2">
-                  <Star size={11} className="text-yellow-500" fill="currentColor" />
-                  <span className="text-xs text-gray-600">{selectedShop.rating?.toFixed(1)}</span>
-                  {selectedShop.category && (
-                    <span className="text-xs text-gray-400 ml-1">• {selectedShop.category}</span>
-                  )}
-                </div>
-                <Link
-                  to={`/shop/${selectedShop.id}`}
-                  className="block text-center bg-indigo-600 text-white text-xs py-1.5 px-3 rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  Shop kholein →
-                </Link>
-              </div>
-            </InfoWindow>
-          )}
-        </GoogleMap>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
 
         {/* Map legend */}
-        <div className="absolute bottom-3 left-3 bg-white rounded-lg shadow px-2 py-1.5 flex items-center gap-3 text-xs">
+        <div className="absolute bottom-3 left-3 bg-white rounded-lg shadow px-2 py-1.5 flex items-center gap-3 text-xs z-[1000]">
           <span className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block" /> Aap
           </span>
@@ -135,7 +98,7 @@ export default function NearbyShopsMap({ shops, userLocation }) {
         </div>
 
         {/* Count badge */}
-        <div className="absolute top-3 right-3 bg-white rounded-lg shadow px-2.5 py-1 text-xs font-medium text-gray-700">
+        <div className="absolute top-3 right-3 bg-white rounded-lg shadow px-2.5 py-1 text-xs font-medium text-gray-700 z-[1000]">
           📍 {shopsWithLocation.length} shops map pe
         </div>
       </div>
