@@ -7,6 +7,7 @@ import { Search, ShoppingCart, MapPin, Star, Bot, LogOut, Store, Map, List, Zap,
 import toast from 'react-hot-toast'
 import NearbyShopsMap from '../../components/NearbyShopsMap'
 import { CATEGORIES } from '../../data/categories'
+import { useUserLocation } from '../../hooks/useUserLocation'
 
 // Rough ETA model: base pick/pack time + 2 min per km, capped for display sanity
 function estimateEta(distanceKm) {
@@ -19,17 +20,24 @@ export default function CustomerHome() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
   const [viewMode, setViewMode] = useState('list') // 'list' or 'map'
-  const [userLocation, setUserLocation] = useState({ lat: 29.0531, lng: 79.5262}) // Aligarh default
+  // GPS -> cached last location -> IP-based location -> city fallback -> default.
+  // Ye sab useUserLocation hook ke andar handle hota hai.
+  const { location: userLocation, isDetecting, permissionDenied } = useUserLocation()
   const { logout } = useAuthStore()
   const { count } = useCartStore()
   const navigate = useNavigate()
 
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      pos => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => toast('Location nahi mili, default area use ho raha hai', { icon: '📍' })
-    )
-  }, [])
+    if (isDetecting) return
+    if (userLocation.source === 'gps') return // silent -- best case, koi toast nahi
+    if (userLocation.source === 'ip') {
+      toast(`Approx location: ${userLocation.label || 'IP se detect hui'}`, { icon: '📍' })
+    } else if (permissionDenied) {
+      toast('Location permission nahi mili, approximate area use ho raha hai', { icon: '📍' })
+    } else if (userLocation.source === 'default') {
+      toast('Location detect nahi ho payi, default area use ho raha hai', { icon: '📍' })
+    }
+  }, [isDetecting, userLocation, permissionDenied])
 
   const { data: shops, isLoading } = useQuery({
     queryKey: ['nearby-shops', userLocation],
@@ -59,7 +67,7 @@ export default function CustomerHome() {
                 </h1>
               </div>
               <p className="text-ink-100/70 text-xs flex items-center gap-1 mt-0.5">
-                <MapPin size={11} />Delivering to your area · Rudrapur, UK
+                <MapPin size={11} />Delivering to {userLocation.label ? userLocation.label : 'your area'}
               </p>
             </div>
             <div className="flex items-center gap-2">

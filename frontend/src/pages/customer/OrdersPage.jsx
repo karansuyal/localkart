@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { orderAPI } from '../../services/api'
 import { useOrderTracking } from '../../hooks/useOrderTracking'
-import { ArrowLeft, Package, Clock, MapPin, IndianRupee, Wifi, WifiOff, Phone, Navigation } from 'lucide-react'
+import { useOsrmRoute } from '../../hooks/useOsrmRoute'
+import { ArrowLeft, Package, Clock, MapPin, IndianRupee, Wifi, WifiOff, Phone, Navigation, Share2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import toast from 'react-hot-toast'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -75,26 +77,63 @@ const STATUS_MSG = {
 // straight-line distance se rough ETA nikalne ke liye, actual road route nahi.
 const AVG_SPEED_KMH = 20
 
-function DeliveryMap({ deliveryLocation, customerLocation }) {
+const STALE_MS = 15000 // 15 sec se zyada purani location = partner offline/no-signal maano
+
+function DeliveryMap({ deliveryLocation, customerLocation, lastLocationUpdate, orderId }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 2000)
+    return () => clearInterval(t)
+  }, [])
+
+  const hasCustomer = customerLocation?.lat && customerLocation?.lng
+  // OSRM se actual road route + accurate ETA -- fail ho jaaye to seedhi-line
+  // fallback (haversine) automatically use ho jaata hai neeche.
+  const { path: roadPath, distanceKm: roadDistKm, etaMin: roadEtaMin, isRoadRoute } =
+    useOsrmRoute(deliveryLocation, hasCustomer ? customerLocation : null)
+
   if (!deliveryLocation) return null
   const { lat, lng } = deliveryLocation
-  const hasCustomer = customerLocation?.lat && customerLocation?.lng
   const points = hasCustomer ? [[lat, lng], [customerLocation.lat, customerLocation.lng]] : [[lat, lng]]
-  const dist = hasCustomer ? distanceKm(lat, lng, customerLocation.lat, customerLocation.lng) : null
-  const etaMin = dist != null ? Math.max(1, Math.round((dist / AVG_SPEED_KMH) * 60)) : null
+  const straightDist = hasCustomer ? distanceKm(lat, lng, customerLocation.lat, customerLocation.lng) : null
+  const straightEta = straightDist != null ? Math.max(1, Math.round((straightDist / AVG_SPEED_KMH) * 60)) : null
+
+  // Road-route data available ho to use karo, warna straight-line fallback
+  const dist = isRoadRoute && roadDistKm != null ? roadDistKm : straightDist
+  const etaMin = isRoadRoute && roadEtaMin != null ? roadEtaMin : straightEta
+  const linePath = isRoadRoute && roadPath ? roadPath : points
+
+  const isStale = lastLocationUpdate ? (now - lastLocationUpdate) > STALE_MS : false
+  const secsAgo = lastLocationUpdate ? Math.round((now - lastLocationUpdate) / 1000) : null
+
+  const shareTracking = async () => {
+    const url = `${window.location.origin}/orders#order-${orderId}`
+    const text = `LocalKart: mera order live track karein 🛵 ${url}`
+    if (navigator.share) {
+      try { await navigator.share({ title: 'LocalKart Live Tracking', text, url }) } catch { /* user cancelled */ }
+    } else {
+      await navigator.clipboard.writeText(url)
+      toast.success('Tracking link copy ho gaya!')
+    }
+  }
 
   return (
     <div className="mt-3 rounded-xl overflow-hidden border border-gray-200">
       <div className="bg-green-50 px-3 py-1.5 flex items-center justify-between gap-2 text-xs text-green-700 font-medium">
         <span className="flex items-center gap-2">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          Delivery Partner Live Location
+          <span className={`w-2 h-2 rounded-full ${isStale ? 'bg-gray-400' : 'bg-green-500 animate-pulse'}`} />
+          {isStale ? `Offline · ${secsAgo}s se update nahi` : 'Delivery Partner Live Location'}
         </span>
-        {dist != null && (
-          <span className="flex items-center gap-1 text-green-800">
-            <Navigation size={11} />{dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(1)} km`} away
-          </span>
-        )}
+        <span className="flex items-center gap-2">
+          {dist != null && (
+            <span className="flex items-center gap-1 text-green-800">
+              <Navigation size={11} />{dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(1)} km`} away
+            </span>
+          )}
+          <button onClick={shareTracking} title="Live tracking link share karein" className="text-green-700 hover:text-green-900">
+            <Share2 size={13} />
+          </button>
+        </span>
       </div>
       <MapContainer center={[lat, lng]} zoom={15} scrollWheelZoom={false} style={{ height: '180px', width: '100%' }}>
         <TileLayer
@@ -104,12 +143,14 @@ function DeliveryMap({ deliveryLocation, customerLocation }) {
         <AutoFit points={points} />
         {hasCustomer && (
           <Polyline
-            positions={points}
-            pathOptions={{ color: '#4F46E5', weight: 3, dashArray: '6 8', opacity: 0.8 }}
+            positions={linePath}
+            pathOptions={isRoadRoute
+              ? { color: '#4F46E5', weight: 4, opacity: 0.85 }
+              : { color: '#4F46E5', weight: 3, dashArray: '6 8', opacity: 0.8 }}
           />
         )}
-        <Marker position={[lat, lng]} icon={deliveryIcon}>
-          <Popup>Delivery partner yahan hai 🛵</Popup>
+        <Marker position={[lat, lng]} icon={deliveryIcon} opacity={isStale ? 0.5 : 1}>
+          <Popup>{isStale ? `Last seen ${secsAgo}s pehle` : 'Delivery partner yahan hai 🛵'}</Popup>
         </Marker>
         {hasCustomer && (
           <Marker position={[customerLocation.lat, customerLocation.lng]} icon={homeIcon}>
@@ -120,6 +161,7 @@ function DeliveryMap({ deliveryLocation, customerLocation }) {
       {etaMin != null && (
         <div className="bg-white px-3 py-1.5 text-xs text-gray-600 border-t border-gray-100 flex items-center gap-1">
           <Clock size={11} /> Lagbhag <span className="font-semibold text-gray-800">{etaMin} min</span> mein pahunch sakta hai
+          {isRoadRoute && <span className="text-gray-400 ml-1">(road route)</span>}
         </div>
       )}
     </div>
@@ -153,7 +195,7 @@ function DeliveryPartnerCard({ name, phone }) {
 }
 
 function LiveOrderCard({ order }) {
-  const { status: liveStatus, message, eta, deliveryLocation, deliveryName, deliveryPhone, connected } = useOrderTracking(order.id)
+  const { status: liveStatus, message, eta, deliveryLocation, lastLocationUpdate, deliveryName, deliveryPhone, connected } = useOrderTracking(order.id)
   const currentStatus = liveStatus || order.status
   const stepIdx = STEP_INDEX[currentStatus] ?? 0
   const [showOtp, setShowOtp] = useState(false)
@@ -166,7 +208,7 @@ function LiveOrderCard({ order }) {
     ? { lat: order.delivery_lat, lng: order.delivery_lng } : null
 
   return (
-    <div className={`card mb-4 ${isActive ? 'border-2 border-primary-200' : 'border border-gray-200'}`}>
+    <div id={`order-${order.id}`} className={`card mb-4 ${isActive ? 'border-2 border-primary-200' : 'border border-gray-200'}`}>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
@@ -260,7 +302,12 @@ function LiveOrderCard({ order }) {
 
       {/* Live Map — pickup ke baad, route line + live distance ke saath */}
       {currentStatus === 'picked_up' && (
-        <DeliveryMap deliveryLocation={deliveryLocation} customerLocation={customerLocation} />
+        <DeliveryMap
+          deliveryLocation={deliveryLocation}
+          customerLocation={customerLocation}
+          lastLocationUpdate={lastLocationUpdate}
+          orderId={order.id}
+        />
       )}
 
       {/* OTP */}
@@ -282,14 +329,19 @@ function LiveOrderCard({ order }) {
 }
 
 export default function OrdersPage() {
-  const { data: orders, isLoading } = useQuery({
+  const { data: orders, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['my-orders'],
     queryFn: () => orderAPI.mine().then(r => r.data),
     refetchInterval: 30000,
   })
 
-  const activeOrders = orders?.filter(o => !['delivered', 'cancelled'].includes(o.status)) || []
-  const pastOrders = orders?.filter(o => ['delivered', 'cancelled'].includes(o.status)) || []
+  // orders undefined ho sakta hai (query abhi settle nahi hui, ya error ke
+  // baad bhi data undefined reh jaata hai) -- isliye hamesha Array.isArray
+  // check karo, warna "orders?.length === 0" false ban jaata hai jab orders
+  // undefined ho, aur na hi empty-state dikhta hai na list -- bas white page.
+  const ordersList = Array.isArray(orders) ? orders : []
+  const activeOrders = ordersList.filter(o => !['delivered', 'cancelled'].includes(o.status))
+  const pastOrders = ordersList.filter(o => ['delivered', 'cancelled'].includes(o.status))
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -308,7 +360,14 @@ export default function OrdersPage() {
       <div className="max-w-lg mx-auto px-4 py-4">
         {isLoading ? (
           [1,2].map(i => <div key={i} className="card h-40 animate-pulse bg-gray-100 mb-3" />)
-        ) : orders?.length === 0 ? (
+        ) : isError ? (
+          <div className="text-center py-12">
+            <WifiOff size={48} className="mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500 mb-1">Orders load nahi ho paaye</p>
+            <p className="text-xs text-gray-400 mb-4">{error?.response?.data?.detail || error?.message || 'Network error'}</p>
+            <button onClick={() => refetch()} className="btn-primary px-6 py-2 text-sm">Dobara try karein</button>
+          </div>
+        ) : ordersList.length === 0 ? (
           <div className="text-center py-12">
             <Package size={48} className="mx-auto text-gray-300 mb-3" />
             <p className="text-gray-500">Koi order nahi abhi tak</p>
