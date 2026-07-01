@@ -22,6 +22,12 @@ class StoreType(str, enum.Enum):
     shop = "shop"               # regular shopkeeper-run store, normal delivery time
     dark_store = "dark_store"   # fast-delivery store, 10-15 min SLA, may be company-run or shopkeeper-converted
 
+class PaymentStatus(str, enum.Enum):
+    not_required = "not_required"  # COD orders -- nothing to collect online
+    pending      = "pending"       # online payment initiated, awaiting PhonePe confirmation
+    paid         = "paid"
+    failed       = "failed"
+
 class User(Base):
     __tablename__ = "users"
     id            = Column(Integer, primary_key=True, index=True)
@@ -115,8 +121,13 @@ class Order(Base):
     delivery_lat  = Column(Float, nullable=True)
     delivery_lng  = Column(Float, nullable=True)
     notes         = Column(Text, nullable=True)
-    payment_mode  = Column(String(50), default="cod")
+    payment_mode  = Column(String(50), default="cod")   # 'cod' | 'phonepe'
     eta_minutes   = Column(Integer, nullable=True)   # promised ETA at order time (dark-store orders)
+
+    # ─── Online payment (PhonePe) fields ─────────────────────────────────
+    payment_status        = Column(Enum(PaymentStatus), default=PaymentStatus.not_required, nullable=False)
+    phonepe_merchant_order_id = Column(String(63), nullable=True, unique=True)  # our order id sent to PhonePe
+    phonepe_transaction_id    = Column(String(100), nullable=True)             # PhonePe's own txn id, set on success
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     updated_at    = Column(DateTime(timezone=True), onupdate=func.now())
 

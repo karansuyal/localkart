@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from typing import List
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.user import User, Order, OrderItem, Product, Shop, Delivery, UserRole, OrderStatus
+from app.models.user import User, Order, OrderItem, Product, Shop, Delivery, UserRole, OrderStatus, PaymentStatus
 from app.schemas.schemas import OrderCreate, OrderOut
 from app.services.notifications import notify_shopkeeper, notify_delivery_partners
 import math
@@ -18,6 +18,39 @@ def haversine(lat1, lng1, lat2, lng2):
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+async def notify_new_order(db: AsyncSession, order: Order, shop: Shop, total: float, delivery_address: str):
+    """Shopkeeper + delivery partners ko naye order ka alert -- COD orders ke
+    liye order place hote hi call hota hai. PhonePe orders ke liye ye tabhi
+    call hota hai jab payment webhook 'paid' confirm karta hai (payments.py),
+    taaki shopkeeper sirf paid orders hi dekhe, abandoned checkouts nahi."""
+    owner_res = await db.execute(select(User).where(User.id == shop.owner_id))
+    owner = owner_res.scalar_one_or_none()
+    if owner and owner.fcm_token:
+        await notify_shopkeeper(
+            owner.fcm_token,
+            title="🛍️ Naya Order Aaya!",
+            body=f"₹{total} ka order {shop.name} pe — jaldi confirm karo!",
+            order_id=order.id
+        )
+
+    await notify_delivery_partners(
+        title="📦 Naya Delivery Order!",
+        body=f"₹{total} ka order available — {delivery_address[:40]}...",
+        order_id=order.id
+    )
+
+    try:
+        from app.api.v1.endpoints.websocket import manager
+        await manager.broadcast(f"shop_{shop.id}", {
+            "type": "new_order", "order_id": order.id,
+            "total_amount": total, "message": f"Naya order! ₹{total}"
+        })
+        await manager.broadcast("delivery_available", {
+            "type": "new_delivery", "order_id": order.id
+        })
+    except Exception:
+        pass
 
 @router.post("/", response_model=OrderOut, status_code=201)
 async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -46,12 +79,20 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
         travel_minutes = math.ceil((distance_km / 20) * 60)
         eta_minutes = shop.avg_prep_minutes + travel_minutes
 
+    # Online payment (PhonePe) orders start out unpaid -- the shopkeeper/
+    # delivery alerts are deferred until the payment webhook confirms it,
+    # so no one gets pinged about an order the customer never actually paid
+    # for. COD needs no such wait, there's nothing to confirm upfront.
+    is_online_payment = data.payment_mode == "phonepe"
+    payment_status = PaymentStatus.pending if is_online_payment else PaymentStatus.not_required
+
     order = Order(
         user_id=current_user.id, shop_id=data.shop_id,
         total_amount=total, delivery_fee=20.0,
         delivery_address=data.delivery_address,
         delivery_lat=data.delivery_lat, delivery_lng=data.delivery_lng,
         notes=data.notes, payment_mode=data.payment_mode,
+        payment_status=payment_status,
         eta_minutes=eta_minutes
     )
     db.add(order)
@@ -67,40 +108,8 @@ async def place_order(data: OrderCreate, db: AsyncSession = Depends(get_db), cur
     db.add(delivery)
     await db.commit()
 
-    # Shopkeeper ko FCM notification
-    owner_res = await db.execute(select(User).where(User.id == shop.owner_id))
-    owner = owner_res.scalar_one_or_none()
-    if owner and owner.fcm_token:
-        await notify_shopkeeper(
-            owner.fcm_token,
-            title="🛍️ Naya Order Aaya!",
-            body=f"₹{total} ka order {shop.name} pe — jaldi confirm karo!",
-            order_id=order.id
-        )
-
-    # Delivery partners ko FCM notification (topic)
-    await notify_delivery_partners(
-        title="📦 Naya Delivery Order!",
-        body=f"₹{total} ka order available — {data.delivery_address[:40]}...",
-        order_id=order.id
-    )
-
-    # WebSocket se shopkeeper ko bhi notify
-    try:
-        from app.api.v1.endpoints.websocket import manager
-        await manager.broadcast(f"shop_{data.shop_id}", {
-            "type": "new_order", "order_id": order.id,
-            "total_amount": total, "message": f"Naya order! ₹{total}"
-        })
-        # Same event, broadcast to whichever delivery partners are actively
-        # connected -- this is what the delivery dashboard's live "available
-        # orders" list listens for. Without this call, that WebSocket room
-        # never receives anything even when the connection itself works.
-        await manager.broadcast("delivery_available", {
-            "type": "new_delivery", "order_id": order.id
-        })
-    except Exception:
-        pass
+    if not is_online_payment:
+        await notify_new_order(db, order, shop, total, data.delivery_address)
 
     result = await db.execute(
         select(Order).options(selectinload(Order.items)).where(Order.id == order.id)

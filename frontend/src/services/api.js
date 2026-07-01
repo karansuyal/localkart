@@ -85,6 +85,12 @@ export const orderAPI = {
     api.patch(`/orders/${id}/status`, null, { params: { status } }),
 }
 
+// ==================== PAYMENTS (PhonePe) ====================
+export const paymentAPI = {
+  initiatePhonePe: (orderId) => api.post('/payments/phonepe/initiate', { order_id: orderId }),
+  status: (orderId) => api.get(`/payments/phonepe/status/${orderId}`),
+}
+
 // ==================== REVIEWS ====================
 export const reviewAPI = {
   create: (data) => api.post('/reviews/', data),

@@ -76,6 +76,15 @@ function LiveOrderCard({ order }) {
         <div>
           <span className="font-bold text-gray-800">Order #{order.id}</span>
           <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString('hi-IN')}</p>
+          {order.payment_mode === 'phonepe' && (
+            <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded mt-1 ${
+              order.payment_status === 'paid' ? 'bg-green-100 text-green-700'
+              : order.payment_status === 'failed' ? 'bg-red-100 text-red-700'
+              : 'bg-yellow-100 text-yellow-700'
+            }`}>
+              PhonePe: {order.payment_status === 'paid' ? 'Paid ✓' : order.payment_status === 'failed' ? 'Failed' : 'Pending'}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isActive && (

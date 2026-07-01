@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api.v1.endpoints import auth, users, shops, products, orders, reviews, deliveries, admin, websocket,unsplash
+from app.api.v1.endpoints import auth, users, shops, products, orders, reviews, deliveries, admin, websocket, unsplash, payments
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,6 +44,7 @@ app.include_router(deliveries.router,  prefix="/api/v1/deliveries", tags=["Deliv
 app.include_router(admin.router,       prefix="/api/v1/admin",      tags=["Admin"])
 app.include_router(websocket.router,   tags=["WebSocket"])
 app.include_router(unsplash.router,    prefix="/api/v1/unsplash",   tags=["Unsplash"])
+app.include_router(payments.router,    prefix="/api/v1/payments",   tags=["Payments"])
 
 @app.get("/")
 async def root():

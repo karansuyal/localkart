@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useCartStore, useAuthStore } from '../../context/store'
-import { orderAPI, shopAPI } from '../../services/api'
-import { ArrowLeft, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react'
+import { orderAPI, shopAPI, paymentAPI } from '../../services/api'
+import { ArrowLeft, Plus, Minus, Trash2, ShoppingBag, Wallet, Smartphone } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 // Strips spaces/dashes/+ and ensures an Indian country code prefix so
@@ -43,6 +43,7 @@ export default function CartPage() {
   const { user } = useAuthStore()
   const [address, setAddress] = useState('')
   const [loading, setLoading] = useState(false)
+  const [paymentMode, setPaymentMode] = useState('cod') // 'cod' | 'phonepe'
   const navigate = useNavigate()
 
   const { data: shop } = useQuery({
@@ -55,6 +56,42 @@ export default function CartPage() {
   const deliveryFee = 20
   const total = subtotal + deliveryFee
 
+  // Shopkeeper ko WhatsApp pe order details bhejna -- sirf COD flow mein,
+  // kyunki online payment orders ka WhatsApp shopkeeper ko payment confirm
+  // hone ke baad hi bhejna sahi hoga (abhi sirf order create hone ka).
+  const notifyShopkeeperOnWhatsApp = (order) => {
+    const waNumber = toWhatsAppNumber(shop?.phone)
+    if (!waNumber) {
+      toast.success('Order place ho gaya! 🎉')
+      toast('Shopkeeper ka phone number nahi mila, WhatsApp nahi bheja gaya', { icon: '⚠️' })
+      return
+    }
+    const message = buildOrderMessage({
+      order, items, customerName: user?.name || 'Customer',
+      address, total, shopName: shop?.name || 'Shop'
+    })
+    const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`
+    const opened = window.open(waUrl, '_blank')
+
+    if (opened) {
+      toast.success('Order place ho gaya! WhatsApp pe shopkeeper ko bhejo 📲')
+    } else {
+      toast.success('Order place ho gaya! 🎉')
+      toast(
+        (t) => (
+          <span>
+            Popup block hua.{' '}
+            <a href={waUrl} target="_blank" rel="noopener noreferrer" className="text-primary-600 underline font-medium">
+              Yahan tap karo
+            </a>{' '}
+            shopkeeper ko WhatsApp bhejne ke liye
+          </span>
+        ),
+        { duration: 8000 }
+      )
+    }
+  }
+
   const placeOrder = async () => {
     if (!address.trim()) { toast.error('Delivery address daalna zaroori hai!'); return }
     setLoading(true)
@@ -63,46 +100,22 @@ export default function CartPage() {
         shop_id: shopId,
         items: items.map(i => ({ product_id: i.id, quantity: i.qty })),
         delivery_address: address,
-        payment_mode: 'cod'
+        payment_mode: paymentMode
       })
       const order = res.data
 
-      // Build the WhatsApp deep link to the shopkeeper with full order
-      // details pre-filled, then open it. This only opens a tab -- the
-      // customer still has to tap Send on their end, since a backend
-      // can't push a WhatsApp message for free without a paid API.
-      const waNumber = toWhatsAppNumber(shop?.phone)
-      if (waNumber) {
-        const message = buildOrderMessage({
-          order, items, customerName: user?.name || 'Customer',
-          address, total, shopName: shop?.name || 'Shop'
-        })
-        const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`
-        const opened = window.open(waUrl, '_blank')
-
-        if (opened) {
-          toast.success('Order place ho gaya! WhatsApp pe shopkeeper ko bhejo 📲')
-        } else {
-          // Popup blocked -- fall back to a manual link the customer taps.
-          toast.success('Order place ho gaya! 🎉')
-          toast(
-            (t) => (
-              <span>
-                Popup block hua.{' '}
-                <a href={waUrl} target="_blank" rel="noopener noreferrer" className="text-primary-600 underline font-medium">
-                  Yahan tap karo
-                </a>{' '}
-                shopkeeper ko WhatsApp bhejne ke liye
-              </span>
-            ),
-            { duration: 8000 }
-          )
-        }
-      } else {
-        toast.success('Order place ho gaya! 🎉')
-        toast('Shopkeeper ka phone number nahi mila, WhatsApp nahi bheja gaya', { icon: '⚠️' })
+      if (paymentMode === 'phonepe') {
+        // Order ban chuka hai (unpaid) -- ab PhonePe checkout shuru karo.
+        // Cart ko yahin clear kar dete hain kyunki order already ban chuka
+        // hai; agar payment fail hui to bhi order 'failed' status mein
+        // dikhega, dobara pay karne ka option Orders page se milega.
+        const payRes = await paymentAPI.initiatePhonePe(order.id)
+        clearCart()
+        window.location.href = payRes.data.redirect_url
+        return
       }
 
+      notifyShopkeeperOnWhatsApp(order)
       clearCart()
       navigate('/orders')
     } catch (err) {
@@ -159,20 +172,58 @@ export default function CartPage() {
         </div>
 
         <div className="card">
+          <h3 className="font-bold text-gray-800 mb-3">Payment Method</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPaymentMode('cod')}
+              className={`flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 transition-colors ${
+                paymentMode === 'cod' ? 'border-primary-600 bg-primary-50' : 'border-gray-200'
+              }`}
+            >
+              <Wallet size={22} className={paymentMode === 'cod' ? 'text-primary-600' : 'text-gray-400'} />
+              <span className={`text-sm font-medium ${paymentMode === 'cod' ? 'text-primary-700' : 'text-gray-600'}`}>
+                Cash on Delivery
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentMode('phonepe')}
+              className={`flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 transition-colors ${
+                paymentMode === 'phonepe' ? 'border-primary-600 bg-primary-50' : 'border-gray-200'
+              }`}
+            >
+              <Smartphone size={22} className={paymentMode === 'phonepe' ? 'text-primary-600' : 'text-gray-400'} />
+              <span className={`text-sm font-medium ${paymentMode === 'phonepe' ? 'text-primary-700' : 'text-gray-600'}`}>
+                Pay Online (PhonePe)
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div className="card">
           <h3 className="font-bold text-gray-800 mb-3">Bill Summary</h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₹{subtotal}</span></div>
             <div className="flex justify-between text-gray-600"><span>Delivery Fee</span><span>₹{deliveryFee}</span></div>
             <div className="border-t pt-2 flex justify-between font-bold text-gray-800 text-base"><span>Total</span><span>₹{total}</span></div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">💳 Cash on Delivery</p>
-          <p className="text-xs text-gray-400 mt-1">📲 Order place karne ke baad WhatsApp khulega shopkeeper ko bhejne ke liye</p>
+          {paymentMode === 'cod' ? (
+            <>
+              <p className="text-xs text-gray-500 mt-2">💳 Cash on Delivery</p>
+              <p className="text-xs text-gray-400 mt-1">📲 Order place karne ke baad WhatsApp khulega shopkeeper ko bhejne ke liye</p>
+            </>
+          ) : (
+            <p className="text-xs text-gray-500 mt-2">📲 Order place karne ke baad PhonePe checkout khulega — UPI, card ya netbanking se pay kar sakte ho</p>
+          )}
         </div>
       </div>
 
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 py-4 bg-white border-t">
         <button onClick={placeOrder} disabled={loading} className="btn-primary w-full py-4 text-base font-bold disabled:opacity-50">
-          {loading ? 'Placing Order...' : `Place Order • ₹${total}`}
+          {loading
+            ? (paymentMode === 'phonepe' ? 'PhonePe pe le ja rahe hain...' : 'Placing Order...')
+            : paymentMode === 'phonepe' ? `Pay ₹${total} with PhonePe` : `Place Order • ₹${total}`}
         </button>
       </div>
     </div>

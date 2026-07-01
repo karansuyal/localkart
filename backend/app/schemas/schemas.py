@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
-from app.models.user import UserRole, OrderStatus, StoreType
+from app.models.user import UserRole, OrderStatus, StoreType, PaymentStatus
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
 class UserRegister(BaseModel):
@@ -184,11 +184,25 @@ class OrderOut(BaseModel):
     delivery_address: str
     notes: Optional[str]
     payment_mode: str
+    payment_status: PaymentStatus
     eta_minutes: Optional[int]
     otp: Optional[str] = None  # Delivery OTP for customer
     items: List[OrderItemOut]
     created_at: datetime
     class Config: from_attributes = True
+
+# ─── PhonePe Payment ─────────────────────────────────────────────────────────
+class PhonePeInitiateRequest(BaseModel):
+    order_id: int
+
+class PhonePeInitiateResponse(BaseModel):
+    redirect_url: str
+    merchant_order_id: str
+
+class PhonePeStatusOut(BaseModel):
+    order_id: int
+    payment_status: PaymentStatus
+    order_status: OrderStatus
 
 # ─── Review ──────────────────────────────────────────────────────────────────
 class ReviewCreate(BaseModel):

@@ -10,6 +10,7 @@ import Register from './pages/Register'
 import CustomerHome from './pages/customer/Home'
 import ShopPage from './pages/customer/ShopPage'
 import CartPage from './pages/customer/CartPage'
+import PaymentResultPage from './pages/customer/PaymentResultPage'
 import OrdersPage from './pages/customer/OrdersPage'
 import ChatbotPage from './pages/customer/ChatbotPage'
 import ShopkeeperDashboard from './pages/shopkeeper/Dashboard'
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="/home" element={<ProtectedRoute roles={['customer']}><CustomerHome /></ProtectedRoute>} />
         <Route path="/shop/:id" element={<ProtectedRoute roles={['customer']}><ShopPage /></ProtectedRoute>} />
         <Route path="/cart" element={<ProtectedRoute roles={['customer']}><CartPage /></ProtectedRoute>} />
+        <Route path="/payment/result" element={<ProtectedRoute roles={['customer']}><PaymentResultPage /></ProtectedRoute>} />
         <Route path="/orders" element={<ProtectedRoute roles={['customer']}><OrdersPage /></ProtectedRoute>} />
         <Route path="/chatbot" element={<ProtectedRoute roles={['customer']}><ChatbotPage /></ProtectedRoute>} />
 

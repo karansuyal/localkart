@@ -20,3 +20,4 @@ aiofiles==23.2.1
 Pillow==10.3.0
 geopy==2.4.1
 requests==2.31.0
+phonepe-pg-sdk-python==2.1.8
