@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { shopAPI } from '../../services/api'
 import { useAuthStore, useCartStore } from '../../context/store'
-import { ShoppingCart, MapPin, Star, Bot, LogOut, Store, Map, List, Zap, ChevronRight, Sparkles, ShieldCheck } from 'lucide-react'
+import {
+  ShoppingCart, MapPin, Star, Bot, LogOut, Store, Map, List, Zap,
+  ChevronRight, Sparkles, ShieldCheck, Heart, Navigation, Flame
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import NearbyShopsMap from '../../components/NearbyShopsMap'
 import SearchBar from '../../components/SearchBar'
@@ -12,11 +15,39 @@ import { CATEGORIES } from '../../data/categories'
 import { useUserLocation } from '../../hooks/useUserLocation'
 import { useSmartSearch } from '../../hooks/useSmartSearch'
 
+// ---------- helpers ----------
+
+// Real straight-line distance between two lat/lng points (km).
+function haversineKm(lat1, lon1, lat2, lon2) {
+  if ([lat1, lon1, lat2, lon2].some(v => v == null || Number.isNaN(v))) return null
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// Use real shop coordinates when available, otherwise a stable pseudo-spread
+// so the UI still has sensible variety for shops without lat/lng yet.
+function getShopDistanceKm(shop, userLocation) {
+  const real = haversineKm(userLocation?.lat, userLocation?.lng, shop.latitude, shop.longitude)
+  return real != null ? real : 0.5 + (shop.id % 5) * 0.6
+}
+
 // Rough ETA model: base pick/pack time + 2 min per km, capped for display sanity
 function estimateEta(distanceKm) {
   if (distanceKm == null) return null
   const mins = Math.round(6 + distanceKm * 2)
   return Math.min(mins, 45)
+}
+
+function getGreeting() {
+  const h = new Date().getHours()
+  if (h < 5) return 'Late night shopping? 🌙'
+  if (h < 12) return 'Good Morning ☀️'
+  if (h < 17) return 'Good Afternoon 👋'
+  if (h < 21) return 'Good Evening 🌆'
+  return 'Late night shopping? 🌙'
 }
 
 const PROMOS = [
@@ -25,19 +56,57 @@ const PROMOS = [
   { title: 'Naye offers har hafte', sub: 'Verified shops, fresh deals', icon: Sparkles },
 ]
 
+const FAVORITES_KEY = 'localkart-favorite-shops'
+
+// Small self-contained favorites hook (localStorage-backed, no store.js change needed).
+function useFavoriteShops() {
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || [] } catch { return [] }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)) } catch { /* storage unavailable, ignore */ }
+  }, [favorites])
+  const toggle = (id) => setFavorites(f => (f.includes(id) ? f.filter(x => x !== id) : [...f, id]))
+  const isFavorite = (id) => favorites.includes(id)
+  return { favorites, toggle, isFavorite }
+}
+
+const CHIPS = [
+  { key: 'all', label: 'All' },
+  { key: 'open', label: 'Open Now' },
+  { key: 'rating', label: 'Top Rated' },
+  { key: 'near', label: 'Nearest' },
+  { key: 'fav', label: 'Favorites' },
+]
+
+// Small reusable heart button used on both the top-rated rail and list cards.
+function FavoriteButton({ active, onToggle, className = '' }) {
+  return (
+    <button
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle() }}
+      aria-label={active ? 'Remove from favorites' : 'Add to favorites'}
+      className={`p-1.5 rounded-full bg-white/90 backdrop-blur shadow-sm hover:scale-110 active:scale-95 transition-transform ${className}`}
+    >
+      <Heart size={14} className={active ? 'text-urgent-500' : 'text-ink-300'} fill={active ? 'currentColor' : 'none'} />
+    </button>
+  )
+}
+
 export default function CustomerHome() {
   const [category, setCategory] = useState('All')
   const [viewMode, setViewMode] = useState('list') // 'list' or 'map'
   const [scrolled, setScrolled] = useState(false)
   const [promoIndex, setPromoIndex] = useState(0)
+  const [chip, setChip] = useState('all')
 
   // GPS -> cached last location -> IP-based location -> city fallback -> default.
   // Ye sab useUserLocation hook ke andar handle hota hai.
   const { location: userLocation, isDetecting, permissionDenied } = useUserLocation()
-  const { logout } = useAuthStore()
+  const { logout, user } = useAuthStore()
   const { count } = useCartStore()
   const navigate = useNavigate()
   const search = useSmartSearch(userLocation)
+  const { favorites, toggle: toggleFavorite, isFavorite } = useFavoriteShops()
 
   useEffect(() => {
     if (isDetecting) return
@@ -69,9 +138,28 @@ export default function CustomerHome() {
     queryFn: () => shopAPI.nearby(userLocation.lat, userLocation.lng, 10).then(r => r.data)
   })
 
-  const filteredShops = shops?.filter(s => category === 'All' || s.category === category) || []
+  // Category-filtered base list (existing behaviour, unchanged).
+  const categoryShops = shops?.filter(s => category === 'All' || s.category === category) || []
+
+  // Chip further filters/sorts on top of the category selection.
+  const filteredShops = useMemo(() => {
+    let list = [...categoryShops]
+    if (chip === 'open') list = list.filter(s => s.is_open)
+    if (chip === 'fav') list = list.filter(s => isFavorite(s.id))
+    if (chip === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0))
+    if (chip === 'near') list.sort((a, b) => getShopDistanceKm(a, userLocation) - getShopDistanceKm(b, userLocation))
+    return list
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryShops, chip, favorites, userLocation])
+
+  // Top-rated rail pulls from the full nearby list (not category-filtered) so it always has content.
+  const topRated = useMemo(() => {
+    return [...(shops || [])].filter(s => s.rating).sort((a, b) => b.rating - a.rating).slice(0, 6)
+  }, [shops])
+
   const fastestEta = shops?.length ? estimateEta(0.8) : null
   const activePromo = PROMOS[promoIndex]
+  const firstName = user?.name?.split(' ')?.[0]
 
   return (
     <div className="min-h-screen bg-ink-50">
@@ -79,13 +167,17 @@ export default function CustomerHome() {
         @keyframes lk-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes lk-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
         @keyframes lk-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+        @keyframes lk-pop { 0% { transform: scale(.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
         .lk-animate-in { animation: lk-fade-up .45s ease both; }
+        .lk-pop-in { animation: lk-pop .3s ease both; }
         .lk-float { animation: lk-float 3s ease-in-out infinite; }
         .lk-shimmer {
           background: linear-gradient(90deg, #F4F4F8 0px, #ECECF4 40px, #F4F4F8 80px);
           background-size: 800px 100%;
           animation: lk-shimmer 1.6s linear infinite;
         }
+        .lk-scrollbar-none::-webkit-scrollbar { display: none; }
+        .lk-scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
       {/* Header */}
@@ -135,6 +227,11 @@ export default function CustomerHome() {
 
         {!search.showResults && (
         <>
+        {/* Greeting */}
+        <p className="text-ink-400 text-sm mb-3 lk-animate-in">
+          {getGreeting()}{firstName ? `, ${firstName}` : ''} — kya chahiye aaj?
+        </p>
+
         {/* Promo strip -- auto-rotating carousel */}
         <div className="mb-5 relative bg-gradient-to-r from-primary-400 to-primary-300 rounded-2xl px-4 py-3.5 flex items-center justify-between overflow-hidden shadow-sm">
           <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full" />
@@ -156,7 +253,7 @@ export default function CustomerHome() {
         </div>
 
         {/* Category Grid */}
-        <div className="mb-6">
+        <div className="mb-5">
           <div className="grid grid-cols-4 gap-3">
             {CATEGORIES.map((cat, i) => (
               <button
@@ -175,6 +272,46 @@ export default function CustomerHome() {
             ))}
           </div>
         </div>
+
+        {/* Top Rated rail — only makes sense when not already deep in a filter */}
+        {!isLoading && topRated.length > 0 && (
+          <div className="mb-6 lk-animate-in">
+            <h2 className="font-display font-bold text-ink-900 flex items-center gap-1.5 mb-2.5">
+              <Flame size={16} className="text-urgent-500" fill="currentColor" />
+              Top Rated Near You
+            </h2>
+            <div className="flex gap-3 overflow-x-auto pb-1 lk-scrollbar-none -mx-4 px-4">
+              {topRated.map(shop => {
+                const dist = getShopDistanceKm(shop, userLocation)
+                return (
+                  <Link
+                    key={shop.id}
+                    to={`/shop/${shop.id}`}
+                    className="relative flex-shrink-0 w-32 bg-white rounded-2xl border border-gray-100 shadow-sm p-2.5 hover:shadow-md hover:-translate-y-0.5 transition-all"
+                  >
+                    <FavoriteButton
+                      active={isFavorite(shop.id)}
+                      onToggle={() => toggleFavorite(shop.id)}
+                      className="absolute top-1.5 right-1.5 z-10"
+                    />
+                    <div className="w-full h-16 rounded-xl bg-gradient-to-br from-primary-100 to-primary-50 flex items-center justify-center mb-2">
+                      <Store size={24} className="text-ink-800" />
+                    </div>
+                    <p className="text-xs font-semibold text-ink-800 truncate">{shop.name}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="flex items-center gap-0.5 text-[11px] text-amber-600 font-medium">
+                        <Star size={10} fill="currentColor" />{shop.rating?.toFixed(1)}
+                      </span>
+                      <span className="flex items-center gap-0.5 text-[10px] text-ink-400">
+                        <Navigation size={9} />{dist.toFixed(1)}km
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Nearby Shops Header with toggle */}
         <div className="flex items-center justify-between mb-3">
@@ -212,6 +349,27 @@ export default function CustomerHome() {
           </div>
         </div>
 
+        {/* Filter / sort chips */}
+        <div className="flex gap-2 overflow-x-auto pb-1 mb-3 lk-scrollbar-none -mx-4 px-4">
+          {CHIPS.map(c => (
+            <button
+              key={c.key}
+              onClick={() => setChip(c.key)}
+              className={`flex-shrink-0 flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                chip === c.key
+                  ? 'bg-ink-900 text-primary-400 border-ink-900'
+                  : 'bg-white text-ink-600 border-gray-200 hover:border-ink-300'
+              }`}
+            >
+              {c.key === 'fav' && <Heart size={11} fill={chip === 'fav' ? 'currentColor' : 'none'} />}
+              {c.label}
+              {c.key === 'fav' && favorites.length > 0 && (
+                <span className={`text-[10px] rounded-full px-1.5 ${chip === 'fav' ? 'bg-primary-400/20' : 'bg-ink-100'}`}>{favorites.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Map View */}
         {viewMode === 'map' && (
           <div className="mb-4 lk-animate-in">
@@ -239,25 +397,31 @@ export default function CustomerHome() {
         ) : filteredShops.length === 0 ? (
           <div className="text-center py-14 text-ink-400 lk-animate-in">
             <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-ink-100 flex items-center justify-center">
-              <Store size={32} className="opacity-40" />
+              {chip === 'fav' ? <Heart size={30} className="opacity-40" /> : <Store size={32} className="opacity-40" />}
             </div>
-            <p className="font-medium">Koi shop nahi mili aas-paas</p>
-            {category !== 'All' && (
-              <button onClick={() => setCategory('All')} className="mt-3 text-primary-700 text-sm font-semibold underline underline-offset-2">
-                Sabhi categories dikhao
+            <p className="font-medium">
+              {chip === 'fav' ? 'Abhi koi favorite shop nahi hai' : 'Koi shop nahi mili aas-paas'}
+            </p>
+            {(category !== 'All' || chip !== 'all') && (
+              <button
+                onClick={() => { setCategory('All'); setChip('all') }}
+                className="mt-3 text-primary-700 text-sm font-semibold underline underline-offset-2"
+              >
+                Sabhi shops dikhao
               </button>
             )}
           </div>
         ) : (
           <div className="space-y-3">
             {filteredShops.map((shop, i) => {
-              const eta = estimateEta(0.5 + (shop.id % 5) * 0.6)
+              const dist = getShopDistanceKm(shop, userLocation)
+              const eta = estimateEta(dist)
               return (
                 <Link
                   key={shop.id}
                   to={`/shop/${shop.id}`}
                   style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}
-                  className="lk-animate-in card flex items-center gap-3 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                  className="lk-animate-in card relative flex items-center gap-3 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 >
                   <div className="relative w-16 h-16 rounded-xl flex-shrink-0 p-[2px] bg-gradient-to-br from-primary-300 to-primary-400">
                     <div className="w-full h-full bg-primary-50 rounded-[10px] flex items-center justify-center">
@@ -275,21 +439,20 @@ export default function CustomerHome() {
                       </span>
                     </div>
                     <p className="text-xs text-ink-400 truncate mt-0.5">{shop.address}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded-md">
                         <Star size={11} fill="currentColor" />{shop.rating?.toFixed(1)}
+                      </span>
+                      <span className="flex items-center gap-0.5 text-xs text-ink-400">
+                        <Navigation size={10} />{dist.toFixed(1)} km
                       </span>
                       <span className={`text-xs font-medium ${shop.is_open ? 'text-fresh-600' : 'text-urgent-500'}`}>
                         {shop.is_open ? 'Open' : 'Closed'}
                       </span>
-                      {shop.category && (
-                        <><span className="text-xs text-ink-100">•</span>
-                        <span className="text-xs text-ink-400 truncate">{shop.category}</span></>
-                      )}
-                      {shop.is_verified && <span className="badge-green ml-auto">✓ Verified</span>}
+                      {shop.is_verified && <span className="badge-green">✓ Verified</span>}
                     </div>
                   </div>
-                  <ChevronRight size={18} className="text-ink-100 flex-shrink-0" />
+                  <FavoriteButton active={isFavorite(shop.id)} onToggle={() => toggleFavorite(shop.id)} />
                 </Link>
               )
             })}
