@@ -26,7 +26,7 @@ function playNotificationBeep() {
   }
 }
 
-export function useOrderTracking(orderId) {
+export function useOrderTracking(orderId, enabled = true) {
   const [status, setStatus] = useState(null)
   const [message, setMessage] = useState(null)
   const [eta, setEta] = useState(null)
@@ -38,7 +38,11 @@ export function useOrderTracking(orderId) {
   const wsRef = useRef(null)
 
   useEffect(() => {
-    if (!orderId) return
+    // Past orders (delivered/cancelled) don't need live tracking -- opening
+    // a WebSocket for every single order in the list (including old ones)
+    // was firing a connection storm on page load and made "My Orders" take
+    // 5-10s to feel ready. Skip the socket entirely when not needed.
+    if (!orderId || !enabled) return
 
     const wsBase = import.meta.env.VITE_WS_URL || 'wss://localkart-gj6g.onrender.com'
     const ws = new WebSocket(`${wsBase}/ws/order/${orderId}`)
@@ -86,7 +90,7 @@ export function useOrderTracking(orderId) {
       clearInterval(ping)
       ws.close()
     }
-  }, [orderId])
+  }, [orderId, enabled])
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
