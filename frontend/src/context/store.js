@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 export const useAuthStore = create(
   persist(
@@ -52,10 +52,15 @@ export const useCartStore = create(
       },
 
       clearCart: () => set({ items: [], shopId: null }),
-
-      get total() { return get().items.reduce((s, i) => s + i.price * i.qty, 0) },
-      get count() { return get().items.reduce((s, i) => s + i.qty, 0) }
     }),
-    { name: 'localkart-cart' }
+    {
+      name: 'localkart-cart',
+      storage: createJSONStorage(() => localStorage),
+      // Only ever persist the actual cart data -- items + shopId. Nothing
+      // else in this store needs to survive a refresh, and keeping the
+      // persisted payload to exactly these two fields means there's no
+      // chance of stale/derived junk corrupting what gets restored.
+      partialize: (state) => ({ items: state.items, shopId: state.shopId }),
+    }
   )
 )
