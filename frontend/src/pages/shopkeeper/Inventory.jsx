@@ -3,15 +3,16 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { shopAPI, productAPI, aiAPI } from '../../services/api'
 import { unsplashService } from '../../services/unsplash'
-import { ArrowLeft, Plus, TrendingUp, Camera, Loader2, Search, Upload, X } from 'lucide-react'
+import { ArrowLeft, Plus, TrendingUp, Camera, Loader2, Search, Upload, X, Pencil, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { guessProductMeta, iconForCategory } from '../../data/commonProducts'
+import { guessProductMeta, iconForCategory, UNITS, unitShortLabel } from '../../data/commonProducts'
 
 export default function InventoryPage() {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [imageTab, setImageTab] = useState('none') // 'none' | 'upload' | 'unsplash'
   const [form, setForm] = useState({ name: '', price: '', quantity: '', category: '', unit: 'piece' })
+  const [unitAuto, setUnitAuto] = useState(true) // true while the unit was auto-guessed, not hand-picked
   const [pendingFile, setPendingFile] = useState(null)
   const [pendingUnsplash, setPendingUnsplash] = useState(null) // { url, id, photographer, photographer_url, download_url }
   const [unsplashQuery, setUnsplashQuery] = useState('')
@@ -20,6 +21,8 @@ export default function InventoryPage() {
   const [forecast, setForecast] = useState({})
   const [forecasting, setForecasting] = useState(null)
   const [uploadingFor, setUploadingFor] = useState(null)
+  const [editingId, setEditingId] = useState(null) // product currently being edited inline (price/qty/unit)
+  const [editForm, setEditForm] = useState({ price: '', quantity: '', unit: 'piece' })
   const fileInputs = useRef({})
   const newProductFileInput = useRef(null)
 
@@ -56,6 +59,16 @@ export default function InventoryPage() {
     onSuccess: () => qc.invalidateQueries(['products'])
   })
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }) => productAPI.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries(['products'])
+      setEditingId(null)
+      toast.success('Product update ho gaya!')
+    },
+    onError: () => toast.error('Update nahi hua, dobara try karo')
+  })
+
   const imageMutation = useMutation({
     mutationFn: ({ id, file }) => productAPI.uploadImage(id, file),
     onSuccess: () => { qc.invalidateQueries(['products']); toast.success('Photo lag gayi!') },
@@ -66,6 +79,7 @@ export default function InventoryPage() {
   const resetAddForm = () => {
     setShowAdd(false)
     setForm({ name: '', price: '', quantity: '', category: '', unit: 'piece' })
+    setUnitAuto(true)
     setImageTab('none')
     setPendingFile(null)
     setPendingUnsplash(null)
@@ -73,12 +87,43 @@ export default function InventoryPage() {
     setUnsplashQuery('')
   }
 
-  // As the shopkeeper types a product name, auto-suggest a category (only
-  // if they haven't already picked one) so the form feels smart without
+  // As the shopkeeper types a product name, auto-suggest a category and a
+  // sensible selling unit (kg/litre/dozen/piece...) -- only if they
+  // haven't already picked their own, so the form feels smart without
   // forcing anything.
   const handleNameChange = (value) => {
     const guess = guessProductMeta(value)
-    setForm(f => ({ ...f, name: value, category: f.category || guess?.category || f.category }))
+    setForm(f => ({
+      ...f,
+      name: value,
+      category: f.category || guess?.category || f.category,
+      unit: unitAuto && guess?.unit ? guess.unit : f.unit,
+    }))
+  }
+
+  const handleUnitChange = (value) => {
+    setUnitAuto(false) // shopkeeper took over -- stop auto-guessing from here on
+    setForm(f => ({ ...f, unit: value }))
+  }
+
+  const startEdit = (product) => {
+    setEditingId(product.id)
+    setEditForm({ price: String(product.price), quantity: String(product.quantity), unit: product.unit || 'piece' })
+  }
+
+  const cancelEdit = () => setEditingId(null)
+
+  const saveEdit = (productId) => {
+    if (!editForm.price || Number(editForm.price) <= 0) return toast.error('Sahi price daalo')
+    if (editForm.quantity === '' || Number(editForm.quantity) < 0) return toast.error('Sahi quantity daalo')
+    editMutation.mutate({
+      id: productId,
+      data: {
+        price: parseFloat(editForm.price),
+        quantity: parseInt(editForm.quantity),
+        unit: editForm.unit,
+      }
+    })
   }
 
   const handleImagePick = (productId, e) => {
@@ -165,6 +210,12 @@ export default function InventoryPage() {
     }
   }
 
+  // "Low stock" means something different depending on the unit -- 3 kg of
+  // rice is fine, but 3 packets of biscuits or 3 loose pieces is worth a
+  // nudge. Keep it simple with per-unit-kind thresholds.
+  const LOW_STOCK_THRESHOLD = { kg: 2, litre: 2, gram: 200, ml: 200 }
+  const isLowStock = (product) => product.quantity < (LOW_STOCK_THRESHOLD[product.unit] ?? 5)
+
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
       <div className="bg-white sticky top-0 z-10 shadow-sm">
@@ -194,12 +245,39 @@ export default function InventoryPage() {
                   placeholder="jaise: Maggi 2-Min Noodles"
                 />
               </div>
-              {[['price','Price (₹)','number'],['quantity','Quantity','number'],['category','Category','text']].map(([key, label, type]) => (
-                <div key={key}>
-                  <label className="text-xs font-medium text-gray-600">{label}</label>
-                  <input type={type} value={form[key]} onChange={e => setForm({...form, [key]: e.target.value})} className="input-field mt-0.5" />
+              <div>
+                <label className="text-xs font-medium text-gray-600">Price (₹)</label>
+                <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className="input-field mt-0.5" placeholder="0" />
+              </div>
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-gray-600">Quantity</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.quantity}
+                    onChange={e => setForm({ ...form, quantity: e.target.value })}
+                    className="input-field mt-0.5"
+                    placeholder={form.unit === 'kg' ? 'jaise: 5' : form.unit === 'gram' ? 'jaise: 500' : '0'}
+                  />
                 </div>
-              ))}
+                <div className="w-32">
+                  <label className="text-xs font-medium text-gray-600">Unit</label>
+                  <select value={form.unit} onChange={e => handleUnitChange(e.target.value)} className="input-field mt-0.5">
+                    {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-400 -mt-2">
+                Stock kitni hai batao — kg, gram, litre, dozen ya piece mein. Naam type karte hi hum sahi unit khud select kar dete hain, tum chaho to badal sakte ho.
+              </p>
+
+              <div>
+                <label className="text-xs font-medium text-gray-600">Category</label>
+                <input type="text" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="input-field mt-0.5" />
+              </div>
 
               {/* ─── Image source picker ─────────────────────────────── */}
               <div>
@@ -333,10 +411,67 @@ export default function InventoryPage() {
                     onChange={e => handleImagePick(product.id, e)}
                   />
 
-                  <div>
+                  <div className="flex-1">
                     <p className="font-medium text-gray-800">{product.name}</p>
-                    <p className="text-xs text-gray-500">{product.category} · Stock: {product.quantity}</p>
-                    <p className="text-primary-600 font-bold">₹{product.price}</p>
+
+                    {editingId === product.id ? (
+                      <div className="mt-1 space-y-1.5 bg-gray-50 rounded-lg p-2">
+                        <div className="flex gap-1.5">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-gray-500">Price (₹)</label>
+                            <input
+                              type="number"
+                              value={editForm.price}
+                              onChange={e => setEditForm({ ...editForm, price: e.target.value })}
+                              className="input-field text-sm py-1 mt-0.5"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-gray-500">Quantity</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={editForm.quantity}
+                              onChange={e => setEditForm({ ...editForm, quantity: e.target.value })}
+                              className="input-field text-sm py-1 mt-0.5"
+                            />
+                          </div>
+                          <div className="w-24">
+                            <label className="text-[10px] text-gray-500">Unit</label>
+                            <select
+                              value={editForm.unit}
+                              onChange={e => setEditForm({ ...editForm, unit: e.target.value })}
+                              className="input-field text-sm py-1 mt-0.5"
+                            >
+                              {UNITS.map(u => <option key={u.value} value={u.value}>{u.short}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => saveEdit(product.id)}
+                            disabled={editMutation.isPending}
+                            className="btn-primary text-xs py-1 px-2 flex items-center gap-1 disabled:opacity-60"
+                          >
+                            <Check size={12} />{editMutation.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                          <button onClick={cancelEdit} className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
+                            <X size={12} />Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-gray-500">{product.category} · Stock: {product.quantity} {unitShortLabel(product.unit)}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-primary-600 font-bold">₹{product.price}</p>
+                          <button onClick={() => startEdit(product)} className="text-gray-400 hover:text-primary-600" title="Price/quantity edit karein">
+                            <Pencil size={12} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+
                     {product.image_source === 'unsplash' && product.unsplash_photographer && (
                       <p className="text-[10px] text-gray-400">
                         📸 <a href={product.unsplash_photographer_url} target="_blank" rel="noopener noreferrer" className="underline">{product.unsplash_photographer}</a> on Unsplash
@@ -368,7 +503,7 @@ export default function InventoryPage() {
                   <p className="text-blue-600 mt-1">Trend: {forecast[product.id].trend === 'up' ? '📈 Increasing' : forecast[product.id].trend === 'down' ? '📉 Decreasing' : '➡️ Stable'}</p>
                 </div>
               )}
-              {product.quantity < 5 && <p className="text-xs text-red-500 mt-1">⚠️ Low stock! Restock karein.</p>}
+              {isLowStock(product) && <p className="text-xs text-red-500 mt-1">⚠️ Low stock! Restock karein.</p>}
             </div>
           ))}
         </div>
